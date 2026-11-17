@@ -273,96 +273,41 @@ export default function TeamyakUnifiedApp() {
           : "bg-slate-900 text-slate-100"
       }`}
     >
-      <header className="w-full bg-slate-950 border-b border-slate-800 px-3 py-2.5 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-emerald-600 text-[11px] font-extrabold text-white">
-                FINAL POLICY & SECURITY
-              </span>
-              <h1 className="text-sm sm:text-base font-extrabold text-white">
-                팀약 (TEAMYAK) — 신규 기능 3종 최종 정책 및 보안 보완
-              </h1>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <div className="flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-700 text-[11px]">
-                {[
-                  { w: 320, label: "320px" },
-                  { w: 390, label: "390px" },
-                  { w: 768, label: "768px" },
-                  { w: 0, label: "PC" },
-                ].map((vp) => (
-                  <button
-                    key={vp.w}
-                    onClick={() => setViewportWidth(vp.w)}
-                    className={`px-2 py-0.5 rounded ${
-                      viewportWidth === vp.w
-                        ? "bg-brand-600 text-white font-bold"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    {vp.label}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-[11px]"
-              >
-                {darkMode ? "🌙 다크 모드" : "☀️ 라이트 모드"}
-              </button>
-
-              <button
-                onClick={() => setDualDeviceMode(!dualDeviceMode)}
-                className={`px-2.5 py-1 rounded-lg font-bold border text-[11px] ${
-                  dualDeviceMode
-                    ? "bg-amber-400 text-slate-950 border-amber-300"
-                    : "bg-slate-800 text-amber-300 border-slate-700"
-                }`}
-              >
-                {dualDeviceMode ? "📱📱 2단말 비교: ON" : "📱 2단말 비교 열기"}
-              </button>
-
-              <button
-                onClick={runFinalSecurityAndPolicyVerification}
-                disabled={isRunningTests}
-                className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold shadow text-[11px]"
-              >
-                {isRunningTests
-                  ? "검증 실행 중..."
-                  : "🛡️ 최종 정책 8대 항목 & 보안 자동 검증 실행"}
-              </button>
-            </div>
+      <header className="w-full bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 py-3 sticky top-0 z-50">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+              TEAM<span className="text-amber-500">YAK</span>
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+              모바일 웹
+            </span>
           </div>
 
-          {globalVerifyLog.length > 0 && (
-            <div className="bg-slate-900 border border-emerald-600/60 rounded-xl p-3 text-[11px] space-y-1 max-h-48 overflow-y-auto">
-              <div className="flex items-center justify-between pb-1 border-b border-slate-800">
-                <span className="font-bold text-emerald-400">
-                  🛡️ 신규 기능 3종 최종 정책 및 보안 검증 결과
-                </span>
-                <button
-                  onClick={() => setGlobalVerifyLog([])}
-                  className="text-slate-400 hover:text-white"
-                >
-                  닫기 ✕
-                </button>
-              </div>
-              {globalVerifyLog.map((line, i) => (
-                <div key={i} className="text-slate-100 font-mono leading-relaxed">
-                  {line}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const clientId =
+                  process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+                  "b1ec0592928d85a41c49f7b984b0bdd1";
+                const redirectUri = `${window.location.origin}/auth/callback`;
+                const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+                  redirectUri
+                )}&response_type=code&state=${encodeURIComponent("/")}`;
+                window.location.href = kakaoAuthUrl;
+              }}
+              className="py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl flex items-center gap-1.5 text-xs shadow-sm"
+            >
+              <span>💬</span>
+              <span>카카오 로그인</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-7xl mx-auto py-4 px-2 sm:px-4 flex flex-col lg:flex-row items-start justify-center gap-6">
+      <main className="flex-1 w-full max-w-md mx-auto py-2 px-2 flex flex-col items-center justify-start">
         <MobileDeviceInstance
-          deviceTitle="단말 세션 #1 (호스트: 삼성생명 김민준 대리)"
+          deviceTitle="팀약 모바일"
           defaultUserId="u_kim"
           defaultTab="meeting_detail"
           viewportWidth={viewportWidth}
@@ -371,23 +316,81 @@ export default function TeamyakUnifiedApp() {
           syncPulse={syncPulse}
           onStateMutated={triggerGlobalSync}
         />
-
-        {dualDeviceMode && (
-          <MobileDeviceInstance
-            deviceTitle="단말 세션 #2 (게스트: 중앙일보 박서연 기자)"
-            defaultUserId="u_park"
-            defaultTab="invite"
-            viewportWidth={viewportWidth}
-            darkMode={darkMode}
-            accounts={accounts}
-            syncPulse={syncPulse}
-            onStateMutated={triggerGlobalSync}
-          />
-        )}
       </main>
+
+      <footer className="w-full max-w-md mx-auto px-4 py-6 mb-16">
+        <details className="text-xs text-slate-400">
+          <summary className="cursor-pointer font-bold py-2 text-slate-500 hover:text-slate-400">
+            🛠️ 개발자 진단 도구 및 테스트 계정 전환 (클릭하여 열기)
+          </summary>
+          <div className="p-3 bg-slate-900 rounded-2xl space-y-3 mt-2 text-white border border-slate-800">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-200"
+              >
+                {darkMode ? "🌙 다크 모드" : "☀️ 라이트 모드"}
+              </button>
+              <button
+                onClick={runFinalSecurityAndPolicyVerification}
+                disabled={isRunningTests}
+                className="px-2.5 py-1 rounded bg-brand-600 text-white font-bold"
+              >
+                {isRunningTests ? "검증 중..." : "🛡️ 정책 8대 항목 자동 검증"}
+              </button>
+            </div>
+            {globalVerifyLog.length > 0 && (
+              <div className="p-2.5 bg-slate-950 rounded-xl text-[10px] font-mono space-y-1 max-h-40 overflow-y-auto">
+                {globalVerifyLog.map((l, i) => (
+                  <div key={i}>{l}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+      </footer>
     </div>
   );
 }
+
+const DEFAULT_PLACES = [
+  {
+    id: "place_1",
+    name: "여의도 화동옥",
+    cuisineType: "한식",
+    roadAddress: "서울 영등포구 국제금융로2길 28 KB금융타워 B1",
+    officialInfoSummary: "한우 불고기·평양냉면 전문점 · 여의도역 도보 4분",
+    naverMapUrl:
+      "https://map.naver.com/p/search/%EC%97%AC%EC%9D%98%EB%8F%84%20%ED%99%94%EB%8F%99%EC%98%A5",
+  },
+  {
+    id: "place_2",
+    name: "경복궁 여의도점",
+    cuisineType: "한식",
+    roadAddress: "서울 영등포구 국제금융로8길 31 여의도백화점 B1",
+    officialInfoSummary: "한정식·구이 코스 전문점 · 비즈니스 오찬 적합",
+    naverMapUrl:
+      "https://map.naver.com/p/search/%EA%B2%BD%EB%B3%B5%EA%B6%81%20%EC%97%AC%EC%9D%98%EB%8F%84%EC%A0%90",
+  },
+  {
+    id: "place_3",
+    name: "창고43 여의도본점",
+    cuisineType: "한식",
+    roadAddress: "서울 영등포구 국제금융로 78 홍우빌딩 5층",
+    officialInfoSummary: "한우 전문점 · 비즈니스 점심 룸 완비",
+    naverMapUrl:
+      "https://map.naver.com/p/search/%EC%B0%BD%EA%B3%A043%20%EC%97%AC%EC%9D%98%EB%8F%84%EB%B3%B8%EC%A0%90",
+  },
+  {
+    id: "place_4",
+    name: "광화문 포시즌스호텔 더 마켓 키친",
+    cuisineType: "양식",
+    roadAddress: "서울 종로구 새문안로 97 포시즌스호텔 LL층",
+    officialInfoSummary: "비즈니스 오찬 미팅 적합 · 프라이빗 다이닝",
+    naverMapUrl:
+      "https://map.naver.com/p/search/%ED%8F%AC%EC%8B%9C%EC%A6%8C%EC%8A%A4%ED%98%B8%ED%85%94%20%EC%84%9C%EC%9A%B8",
+  },
+];
 
 function MobileDeviceInstance({
   deviceTitle,
@@ -435,6 +438,7 @@ function MobileDeviceInstance({
   const [decryptedHistoriesMap, setDecryptedHistoriesMap] = useState<
     Record<string, SensitiveHistoryPayload>
   >({});
+  const [placesCatalog, setPlacesCatalog] = useState<any[]>([]);
   const [notifData, setNotifData] = useState<Record<string, any> | null>(null);
   const [appleCalData, setAppleCalData] = useState<Record<string, any> | null>(null);
   const [isCopiedFeed, setIsCopiedFeed] = useState<boolean>(false);
@@ -507,6 +511,7 @@ function MobileDeviceInstance({
         const mJson = await mRes.json();
         const list = mJson.directMeetings || [];
         setDirectMeetings(list);
+        if (mJson.placesCatalog) setPlacesCatalog(mJson.placesCatalog);
 
         const decMap: Record<string, SensitiveMeetingPayload> = {};
         for (const m of list) {
@@ -986,12 +991,65 @@ function MobileDeviceInstance({
     }
   }
 
+  function handleSharePlace(place: any) {
+    const pName = place.name || place.placeName;
+    const pAddr = place.roadAddress || "여의도 인근";
+    const pDesc =
+      place.officialInfoSummary ||
+      place.recommendationReason ||
+      "비즈니스 오찬 적합";
+    const mapLink =
+      place.naverMapUrl ||
+      `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
+    const text = `🍽️ [TEAMYAK 식당 추천]\n• 식당명: ${pName} (${place.cuisineType})\n• 위치: ${pAddr}\n• 특징: ${pDesc}\n🗺️ 지도: ${mapLink}`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({ title: `${pName} 추천`, text }).catch(() => {});
+    } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        showMsg(
+          `💬 [${pName}] 식당 정보가 복사되었습니다. 카카오톡에 붙여넣어 공유하세요!`
+        );
+      });
+    }
+  }
+
+  function handleShareAllPlaces(places: any[]) {
+    if (!places || places.length === 0) return;
+    const items = places
+      .slice(0, 5)
+      .map(
+        (p, i) =>
+          `${i + 1}. ${p.name || p.placeName} (${p.cuisineType})\n   - 위치: ${
+            p.roadAddress || "여의도"
+          }\n   - 특징: ${
+            p.officialInfoSummary || p.recommendationReason || "비즈니스 오찬"
+          }\n   - 지도: ${
+            p.naverMapUrl ||
+            `https://map.naver.com/p/search/${encodeURIComponent(
+              p.name || p.placeName
+            )}`
+          }`
+      )
+      .join("\n\n");
+    const text = `🍽️ [TEAMYAK 모임 추천 식당 후보 (${Math.min(
+      places.length,
+      5
+    )}곳)]\n\n${items}\n\n👉 약속 확인 및 참여: ${
+      typeof window !== "undefined" ? window.location.origin : ""
+    }`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({ title: "모임 식당 추천 목록", text }).catch(() => {});
+    } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        showMsg(
+          "💬 [식당 추천 목록 전체 복사 완료] 카카오톡 대화방에 붙여넣어 공유하세요!"
+        );
+      });
+    }
+  }
+
   const currentMtg = directMeetings[0] || null;
   const currentDec = currentMtg ? decryptedMeetingsMap[currentMtg.id] : null;
-  const containerStyle =
-    viewportWidth === 0
-      ? { width: "100%", maxWidth: "880px" }
-      : { width: `${viewportWidth}px`, maxWidth: "100%" };
 
   // 브라우저 로컬에서 복호화된 내 방문 식당을 제외한 추천 목록 계산
   const browserFilteredRecs = currentMtg
@@ -1003,29 +1061,19 @@ function MobileDeviceInstance({
     : { filteredRecommendations: [], excludedInBrowserPlaceNames: [] };
 
   return (
-    <div
-      style={containerStyle}
-      className={`rounded-[28px] shadow-2xl border-2 overflow-hidden flex flex-col transition-all ${
-        darkMode
-          ? "bg-slate-900 text-slate-100 border-slate-700"
-          : "bg-slate-50 text-slate-900 border-slate-300"
-      }`}
-    >
-      <div className="bg-slate-900 text-white px-3.5 py-2.5 space-y-2 border-b border-slate-800">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-extrabold text-amber-300 truncate">
-            {deviceTitle}
+    <div className="w-full max-w-md mx-auto rounded-3xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 flex flex-col transition-all overflow-hidden mb-8">
+      {/* 모바일 상단 바 */}
+      <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+          <span className="text-xs font-black text-white">
+            {accounts.find((a) => a.id === currentUserId)?.displayName ||
+              "카카오 회원"}
           </span>
-          <button
-            onClick={() => setIsLoggedIn(!isLoggedIn)}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-              isLoggedIn
-                ? "bg-emerald-600 text-white"
-                : "bg-amber-500 text-slate-950"
-            }`}
-          >
-            {isLoggedIn ? "로그인됨" : "비로그인(미승인)"}
-          </button>
+          <span className="text-[10px] text-slate-400">
+            ({accounts.find((a) => a.id === currentUserId)?.jobTitle ||
+              "팀약 회원"})
+          </span>
         </div>
 
         <button
@@ -1039,30 +1087,15 @@ function MobileDeviceInstance({
             )}&response_type=code&state=${encodeURIComponent("/")}`;
             window.location.href = kakaoAuthUrl;
           }}
-          className="w-full py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-lg flex items-center justify-center gap-1.5 text-[11px] shadow-sm transition-transform active:scale-98"
+          className="py-1 px-2.5 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-lg flex items-center gap-1 text-[10px] shadow-sm transition active:scale-95"
         >
           <span>💬</span>
-          <span>카카오로 실계정 로그인</span>
+          <span>카카오 로그인</span>
         </button>
-
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-[11px] text-slate-400 shrink-0">계정:</span>
-          <select
-            value={currentUserId}
-            onChange={(e) => handleAccountChange(e.target.value)}
-            className="flex-1 bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded-lg border border-slate-700"
-          >
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.displayName} ({acc.jobTitle})
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {toast && (
-        <div className="bg-slate-900 text-emerald-200 px-3.5 py-2 text-[11px] border-b border-slate-700 flex items-start justify-between gap-2">
+        <div className="bg-slate-900 text-emerald-200 px-4 py-2.5 text-[11px] border-b border-slate-700 flex items-start justify-between gap-2">
           <span>{toast}</span>
           <button
             onClick={() => setToast(null)}
@@ -1073,7 +1106,7 @@ function MobileDeviceInstance({
         </div>
       )}
 
-      <div className="p-3.5 space-y-3.5 min-h-[620px] max-h-[720px] overflow-y-auto">
+      <div className="p-4 space-y-4 pb-20 min-h-[500px]">
         {activeTab === "meeting_detail" && (
           <div className="space-y-3.5 text-xs">
             {!currentMtg ? (
@@ -1803,6 +1836,119 @@ function MobileDeviceInstance({
           </div>
         )}
 
+        {activeTab === "place_recommendations" && (
+          <div className="space-y-4 text-xs">
+            {/* 상단 액션 카드 */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    🍽️ 추천 식당 후보 & 공유
+                  </h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    모임 장소 및 비즈니스 오찬에 적합한 추천 식당 목록입니다.
+                  </p>
+                </div>
+              </div>
+
+              {/* 카카오톡 전체 공유 버튼 */}
+              <button
+                onClick={() =>
+                  handleShareAllPlaces(
+                    browserFilteredRecs.filteredRecommendations.length > 0
+                      ? browserFilteredRecs.filteredRecommendations
+                      : placesCatalog.length > 0
+                      ? placesCatalog
+                      : DEFAULT_PLACES
+                  )
+                }
+                className="w-full py-3.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98"
+              >
+                <span>💬</span>
+                <span>추천 식당 목록 전체 카톡 공유하기</span>
+              </button>
+            </div>
+
+            {/* 개별 식당 카드 목록 */}
+            <div className="space-y-3">
+              {(browserFilteredRecs.filteredRecommendations.length > 0
+                ? browserFilteredRecs.filteredRecommendations
+                : placesCatalog.length > 0
+                ? placesCatalog
+                : DEFAULT_PLACES
+              ).map((place: any) => {
+                const pName = place.name || place.placeName;
+                const pCuisine = place.cuisineType;
+                const pAddr = place.roadAddress;
+                const pSummary =
+                  place.officialInfoSummary ||
+                  place.recommendationReason ||
+                  "비즈니스 오찬에 적합한 식당입니다.";
+                const mapUrl =
+                  place.naverMapUrl ||
+                  `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
+
+                return (
+                  <div
+                    key={place.id}
+                    className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                            {pName}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[10px]">
+                            {pCuisine}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          📍 {pAddr}
+                        </p>
+                        <p className="text-[11px] text-slate-700 dark:text-slate-300 mt-1 font-medium">
+                          ✨ {pSummary}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <button
+                        onClick={() => handleSharePlace(place)}
+                        className="py-2.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-[11px] border border-amber-200 flex items-center justify-center gap-1 shadow-sm transition active:scale-95"
+                      >
+                        <span>💬</span>
+                        <span>카톡 공유</span>
+                      </button>
+                      <a
+                        href={mapUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 font-bold text-[11px] border border-slate-200 dark:border-slate-600 flex items-center justify-center gap-1 text-center"
+                      >
+                        <span>🗺️</span>
+                        <span>지도 보기</span>
+                      </a>
+                      <button
+                        onClick={() =>
+                          handleSelectPlace(
+                            currentMtg ? currentMtg.id : "mtg_1",
+                            place.placeId || place.id
+                          )
+                        }
+                        className="py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center gap-1 transition active:scale-95"
+                      >
+                        <span>✓</span>
+                        <span>장소 확정</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {activeTab === "history" && (
           <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
             <div className="font-extrabold">
@@ -1831,12 +1977,12 @@ function MobileDeviceInstance({
         )}
       </div>
 
-      <nav className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 text-[11px] py-2 font-bold">
+      <nav className="sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 text-[11px] py-2.5 font-bold z-40 shadow-lg">
         {[
-          { id: "meeting_detail", label: "모임상세", icon: "📋" },
-          { id: "invite", label: "초대장(2단계)", icon: "💌" },
+          { id: "meeting_detail", label: "약속", icon: "📋" },
+          { id: "place_recommendations", label: "식당 추천 & 공유", icon: "🍽️" },
           { id: "calendar", label: "캘린더·알림", icon: "📅" },
-          { id: "history", label: "암호화이력", icon: "🔐" },
+          { id: "invite", label: "초대장", icon: "💌" },
         ].map((t) => (
           <button
             key={t.id}
@@ -1844,7 +1990,7 @@ function MobileDeviceInstance({
             className={`flex flex-col items-center gap-0.5 ${
               activeTab === t.id
                 ? "text-brand-600 font-extrabold"
-                : "text-slate-400"
+                : "text-slate-400 hover:text-slate-600"
             }`}
           >
             <span className="text-base">{t.icon}</span>
