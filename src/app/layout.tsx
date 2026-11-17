@@ -24,7 +24,7 @@ export default function RootLayout({
           src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${naverMapClientId}`}
         />
       </head>
-      <body className="min-h-screen bg-slate-950 text-slate-900 antialiased">
+      <body className="min-h-screen bg-slate-100 text-slate-900 antialiased">
         {children}
       </body>
     </html>

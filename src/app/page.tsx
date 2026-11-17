@@ -270,16 +270,16 @@ export default function TeamyakUnifiedApp() {
       className={`min-h-screen flex flex-col ${
         darkMode
           ? "dark bg-slate-950 text-slate-100"
-          : "bg-slate-900 text-slate-100"
+          : "bg-slate-100 text-slate-900"
       }`}
     >
-      <header className="w-full bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 py-3 sticky top-0 z-50">
+      <header className="w-full bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-50 shadow-sm">
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+            <span className="text-lg font-black tracking-tight text-slate-900">
               TEAM<span className="text-amber-500">YAK</span>
             </span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 text-[10px] font-bold">
               모바일 웹
             </span>
           </div>
@@ -296,7 +296,7 @@ export default function TeamyakUnifiedApp() {
                 )}&response_type=code&state=${encodeURIComponent("/")}`;
                 window.location.href = kakaoAuthUrl;
               }}
-              className="py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl flex items-center gap-1.5 text-xs shadow-sm"
+              className="py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl flex items-center gap-1.5 text-xs shadow-sm active:scale-95 transition"
             >
               <span>💬</span>
               <span>카카오 로그인</span>
@@ -1061,7 +1061,7 @@ function MobileDeviceInstance({
     : { filteredRecommendations: [], excludedInBrowserPlaceNames: [] };
 
   return (
-    <div className="w-full max-w-md mx-auto rounded-3xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 flex flex-col transition-all overflow-hidden mb-8">
+    <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col transition-all overflow-hidden mb-8">
       {/* 모바일 상단 바 */}
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
         <div className="flex items-center gap-2">
@@ -1108,41 +1108,29 @@ function MobileDeviceInstance({
 
       <div className="p-4 space-y-4 pb-20 min-h-[500px]">
         {activeTab === "meeting_detail" && (
-          <div className="space-y-3.5 text-xs">
+          <div className="space-y-3.5 text-xs text-slate-900">
             {!currentMtg ? (
-              <div
-                className={`rounded-2xl p-5 border text-center space-y-2 ${
-                  darkMode
-                    ? "bg-slate-800 border-slate-700 text-slate-300"
-                    : "bg-white border-slate-200 text-slate-600"
-                }`}
-              >
-                <div className="font-extrabold text-sm">
+              <div className="rounded-2xl p-5 border border-slate-200 bg-white text-center space-y-2 text-slate-700">
+                <div className="font-extrabold text-sm text-slate-900">
                   🔒 비로그인 또는 미승인 상태입니다
                 </div>
-                <p className="text-[11px]">
+                <p className="text-[11px] text-slate-600">
                   비로그인·미승인 사용자에게는 부장급 이상 주요 참석자 배지와 모임 상세가 노출되지 않습니다.
                 </p>
               </div>
             ) : (
               <>
                 {/* 상단 요약 카드 */}
-                <div
-                  className={`rounded-2xl p-4 border shadow-sm space-y-3 ${
-                    darkMode
-                      ? "bg-slate-800 border-slate-700"
-                      : "bg-white border-slate-200"
-                  }`}
-                >
+                <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
                   <div>
                     <div className="text-[11px] font-bold text-brand-600">
                       {currentMtg.hostOrgBadge} 주최
                     </div>
-                    <h2 className="text-lg font-extrabold tracking-tight mt-0.5">
+                    <h2 className="text-lg font-extrabold tracking-tight mt-0.5 text-slate-900">
                       {currentDec ? currentDec.title : "삼성생명 홍보팀 오찬"}
                     </h2>
 
-                    <div className="mt-1.5 text-xs font-bold flex flex-wrap items-center gap-1.5">
+                    <div className="mt-1.5 text-xs font-bold flex flex-wrap items-center gap-1.5 text-slate-700">
                       <span>
                         🗓️ {currentMtg.confirmedDate} 오후 {currentMtg.startTime}
                       </span>
@@ -1150,8 +1138,8 @@ function MobileDeviceInstance({
                       <span
                         className={
                           currentMtg.isPlaceTbd
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-emerald-700 dark:text-emerald-400"
+                            ? "text-amber-600 font-bold"
+                            : "text-emerald-700 font-bold"
                         }
                       >
                         📍 {currentMtg.areaHint} ·{" "}
@@ -1220,7 +1208,7 @@ function MobileDeviceInstance({
                     </button>
                     <button
                       onClick={() => setActiveTab("calendar")}
-                      className="py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300 font-extrabold text-xs border border-purple-200 dark:border-purple-800 shadow-sm flex items-center justify-center gap-1.5 transition"
+                      className="py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 font-extrabold text-xs border border-purple-200 shadow-sm flex items-center justify-center gap-1.5 transition"
                     >
                       <span>📅</span>
                       <span>캘린더 자동 연동 허브</span>
@@ -1229,13 +1217,13 @@ function MobileDeviceInstance({
                   <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
                     <button
                       onClick={() => handleGoogleCalendarSync(currentMtg.id)}
-                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1"
+                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200 flex items-center justify-center gap-1"
                     >
                       <span>🗓️</span> Google 동기화
                     </button>
                     <button
                       onClick={() => handleDownloadSingleIcs(currentMtg)}
-                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1"
+                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200 flex items-center justify-center gap-1"
                     >
                       <span>📥</span> 1회성 .ICS 다운로드
                     </button>
@@ -1243,7 +1231,7 @@ function MobileDeviceInstance({
                 </div>
 
                 {/* 4대 통합 탭 */}
-                <div className="grid grid-cols-4 gap-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-xl text-[11px] font-bold">
+                <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold border border-slate-200">
                   {[
                     { id: "PARTICIPANTS", label: "참석자·직급" },
                     { id: "AI_PLACE", label: "AI 장소추천" },
@@ -1255,8 +1243,8 @@ function MobileDeviceInstance({
                       onClick={() => setDetailSection(tab.id as any)}
                       className={`py-2 rounded-lg transition ${
                         detailSection === tab.id
-                          ? "bg-white dark:bg-slate-900 text-brand-700 dark:text-amber-300 shadow-sm font-extrabold"
-                          : "text-slate-600 dark:text-slate-400"
+                          ? "bg-white text-brand-700 shadow-sm font-extrabold border border-slate-200"
+                          : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
                       {tab.label}
@@ -1266,14 +1254,8 @@ function MobileDeviceInstance({
 
                 {/* 서브섹션 1: 참석자 & 암호화된 주요 참석자 관리 */}
                 {detailSection === "PARTICIPANTS" && (
-                  <div
-                    className={`rounded-2xl p-4 border shadow-sm space-y-3 ${
-                      darkMode
-                        ? "bg-slate-800 border-slate-700"
-                        : "bg-white border-slate-200"
-                    }`}
-                  >
-                    <div className="font-extrabold text-xs">
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
+                    <div className="font-extrabold text-xs text-slate-900">
                       🔐 브라우저 복호화 주요 참석자 구성 (서버 평문 미저장)
                     </div>
                     {(currentDec?.seniorAttendees || []).length === 0 ? (
@@ -1284,11 +1266,11 @@ function MobileDeviceInstance({
                       (currentDec?.seniorAttendees || []).map((sr, idx) => (
                         <div
                           key={idx}
-                          className="p-2.5 rounded-xl bg-purple-50 dark:bg-slate-900 border border-purple-300 flex items-center justify-between"
+                          className="p-2.5 rounded-xl bg-purple-50 border border-purple-300 flex items-center justify-between text-slate-900"
                         >
                           <div>
-                            <span className="font-bold">{sr.displayName}</span>{" "}
-                            — <span>{sr.jobTitle}</span>
+                            <span className="font-bold text-purple-950">{sr.displayName}</span>{" "}
+                            — <span className="text-purple-900">{sr.jobTitle}</span>
                           </div>
                           <span className="px-2 py-0.5 rounded bg-purple-700 text-white text-[10px] font-bold">
                             {sr.seniorityLevel} (
@@ -1298,8 +1280,8 @@ function MobileDeviceInstance({
                       ))
                     )}
 
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2">
-                      <div className="font-bold text-[11px]">
+                    <div className="pt-2 border-t border-slate-200 space-y-2 text-slate-900">
+                      <div className="font-bold text-[11px] text-slate-800">
                         👔 부장급 이상 주요 참석자 암호화 등록·변경
                       </div>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -1307,13 +1289,13 @@ function MobileDeviceInstance({
                           type="text"
                           value={srNameInput}
                           onChange={(e) => setSrNameInput(e.target.value)}
-                          className="px-2 py-1.5 rounded border border-slate-300 text-slate-900"
+                          className="px-2 py-1.5 rounded border border-slate-300 text-slate-900 bg-white"
                         />
                         <input
                           type="text"
                           value={srTitleInput}
                           onChange={(e) => setSrTitleInput(e.target.value)}
-                          className="px-2 py-1.5 rounded border border-slate-300 text-slate-900"
+                          className="px-2 py-1.5 rounded border border-slate-300 text-slate-900 bg-white"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -1361,15 +1343,9 @@ function MobileDeviceInstance({
 
                 {/* 서브섹션 2: AI 장소 추천 (브라우저 로컬 방문 식당 제외 + 1년 취향 보존 정책) */}
                 {detailSection === "AI_PLACE" && (
-                  <div
-                    className={`rounded-2xl p-4 border shadow-sm space-y-3 ${
-                      darkMode
-                        ? "bg-slate-800 border-slate-700"
-                        : "bg-white border-slate-200"
-                    }`}
-                  >
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
                     <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-sm">
+                      <span className="font-extrabold text-sm text-slate-900">
                         🤖 AI 맞춤 장소 추천
                       </span>
                       <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold">
@@ -1378,14 +1354,14 @@ function MobileDeviceInstance({
                     </div>
 
                     {/* 본인 음식 취향 보존 정책 (기본 MEETING_ONLY, 동의 시 최대 1년, 철회 시 즉시 삭제) */}
-                    <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-slate-900 border border-blue-200 space-y-2">
-                      <div className="font-bold text-brand-800 dark:text-blue-300 text-[11px]">
+                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2 text-slate-900">
+                      <div className="font-bold text-brand-800 text-[11px]">
                         🍽️ 내 음식 취향 등록 (타인에게 비공개 · 기본값: MEETING_ONLY)
                       </div>
                       {(currentMtg.preferences || []).map((p: any) => (
-                        <div key={p.id} className="text-[11px]">
+                        <div key={p.id} className="text-[11px] text-slate-800">
                           • 내 설정: 비선호({p.dislikedItems.join(", ")}) · 보존:{" "}
-                          <strong>{p.preferenceScope}</strong>{" "}
+                          <strong className="text-slate-900">{p.preferenceScope}</strong>{" "}
                           {p.consentExpiresAt
                             ? `(만료일: ${p.consentExpiresAt.slice(0, 10)})`
                             : ""}
@@ -1396,7 +1372,7 @@ function MobileDeviceInstance({
                           type="text"
                           value={myDislikedInput}
                           onChange={(e) => setMyDislikedInput(e.target.value)}
-                          className="flex-1 px-2 py-1 rounded border border-slate-300 text-slate-900 text-[11px]"
+                          className="flex-1 px-2 py-1 rounded border border-slate-300 text-slate-900 text-[11px] bg-white"
                         />
                         <button
                           onClick={() => handleSaveMyPreference(currentMtg.id)}
@@ -1406,7 +1382,7 @@ function MobileDeviceInstance({
                         </button>
                       </div>
                       <div className="flex items-center justify-between gap-2 text-[10px]">
-                        <label className="flex items-center gap-1">
+                        <label className="flex items-center gap-1 text-slate-700">
                           <input
                             type="checkbox"
                             checked={longTermPrefConsent}
@@ -1427,7 +1403,7 @@ function MobileDeviceInstance({
                       </div>
                     </div>
 
-                    <label className="flex items-center gap-1.5 text-[11px] font-semibold">
+                    <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800">
                       <input
                         type="checkbox"
                         checked={excludePastVisited}
@@ -1461,9 +1437,9 @@ function MobileDeviceInstance({
                       (rec: any) => (
                         <div
                           key={rec.id}
-                          className="p-3 rounded-xl border border-slate-200 space-y-1.5"
+                          className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1.5 text-slate-900"
                         >
-                          <div className="font-extrabold text-sm">
+                          <div className="font-extrabold text-sm text-slate-900">
                             {rec.placeName} ({rec.cuisineType})
                           </div>
                           <div className="text-[11px] text-slate-600">
@@ -1496,21 +1472,15 @@ function MobileDeviceInstance({
                 )}
 
                 {detailSection === "SCHEDULE_HISTORY" && (
-                  <div
-                    className={`rounded-2xl p-4 border shadow-sm space-y-2.5 ${
-                      darkMode
-                        ? "bg-slate-800 border-slate-700"
-                        : "bg-white border-slate-200"
-                    }`}
-                  >
-                    <div className="font-extrabold text-sm">
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-2.5 text-slate-900">
+                    <div className="font-extrabold text-sm text-slate-900">
                       🗓️ 일정 변경 및 순연 이력 (누적 순연:{" "}
                       {currentMtg.postponementCount}회)
                     </div>
                     {(currentMtg.scheduleChanges || []).map((sc: any) => (
                       <div
                         key={sc.id}
-                        className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 text-[11px]"
+                        className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-800"
                       >
                         {sc.changeType === "INITIAL_CONFIRM"
                           ? `최초 확정: ${sc.newDate}`
@@ -1530,9 +1500,9 @@ function MobileDeviceInstance({
                         href={art.originalUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block p-2.5 rounded-xl border border-slate-200"
+                        className="block p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-900"
                       >
-                        <div className="font-bold">{art.title} ↗</div>
+                        <div className="font-bold text-slate-900">{art.title} ↗</div>
                       </a>
                     ))}
                   </div>
@@ -1558,7 +1528,7 @@ function MobileDeviceInstance({
               </div>
 
               <div>
-                <h2 className="text-base font-extrabold">
+                <h2 className="text-base font-extrabold text-slate-900">
                   {inviteDecrypted
                     ? inviteDecrypted.title
                     : "🔒 [로그인 및 초대 권한 확인 후 제목 공개]"}
@@ -1642,28 +1612,28 @@ function MobileDeviceInstance({
         )}
 
         {activeTab === "calendar" && (
-          <div className="space-y-4">
+          <div className="space-y-4 text-slate-900">
             {/* 상단 헤더 & 개요 */}
-            <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-1">
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-sm flex items-center gap-1.5">
+                <span className="font-extrabold text-sm flex items-center gap-1.5 text-slate-900">
                   <span>📅</span> 캘린더 자동 연동 & 알림 허브
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900">
                   3종 캘린더 지원
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-600">
                 아이폰 기본 캘린더, Google Calendar, 또는 1회성 .ICS 다운로드로 약속 일정을 편리하게 관리하세요.
               </p>
             </div>
 
             {/* ① 아이폰 기본 캘린더 (Apple Calendar) 구독 - iOS 우선 추천 */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border-2 border-brand-500/50 dark:border-brand-500/60 shadow-sm space-y-3">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border-2 border-brand-500/50 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-base">🍎</span>
-                  <span className="font-extrabold text-xs text-slate-900 dark:text-white">
+                  <span className="font-extrabold text-xs text-slate-900">
                     ① 아이폰 기본 캘린더 자동 연동 (Apple Calendar)
                   </span>
                 </div>
@@ -1672,40 +1642,40 @@ function MobileDeviceInstance({
                 </span>
               </div>
 
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                아이폰 이용자는 최초 1회만 구독하면, 이후 팀약에서 수락한 모임이 <strong>아이폰 기본 캘린더에 자동으로 동기화</strong>됩니다.
+              <p className="text-[11px] text-slate-700 leading-relaxed">
+                아이폰 이용자는 최초 1회만 구독하면, 이후 팀약에서 수락한 모임이 <strong className="text-slate-900">아이폰 기본 캘린더에 자동으로 동기화</strong>됩니다.
               </p>
 
               {/* 구독 상태 및 피드 URL */}
-              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200 dark:border-slate-700 space-y-2 text-[11px]">
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2 text-[11px] text-slate-800">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">구독 연동 상태:</span>
+                  <span className="text-slate-600">구독 연동 상태:</span>
                   <span className={`font-bold px-2 py-0.5 rounded-md text-[10px] ${
                     appleCalData?.appleCalendar?.enabled
-                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                      : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                      ? "bg-emerald-100 text-emerald-900 font-extrabold"
+                      : "bg-red-100 text-red-900 font-extrabold"
                   }`}>
                     {appleCalData?.appleCalendar?.enabled ? "● 정상 구독 활성" : "○ 구독 비활성화됨"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">현재 동기화 모임:</span>
-                  <span className="font-extrabold text-brand-700 dark:text-amber-300">
+                  <span className="text-slate-600">현재 동기화 모임:</span>
+                  <span className="font-extrabold text-brand-700">
                     {appleCalData?.appleCalendar?.activeEventsCount ?? 0}건 확정 모임
                   </span>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-slate-500 dark:text-slate-400 text-[10px]">내 고유 구독 피드 URL:</span>
+                  <span className="text-slate-600 text-[10px]">내 고유 구독 피드 URL:</span>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="text"
                       readOnly
                       value={appleCalData?.appleCalendar?.httpsUrl || "URL 생성 중..."}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-[10px] font-mono select-all text-slate-700 dark:text-slate-300"
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-[10px] font-mono select-all text-slate-900"
                     />
                     <button
                       onClick={() => handleCopyFeedUrl(appleCalData?.appleCalendar?.httpsUrl)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold text-[10px] whitespace-nowrap"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold text-[10px] whitespace-nowrap"
                     >
                       {isCopiedFeed ? "✓ 복사됨" : "URL 복사"}
                     </button>
@@ -1726,7 +1696,7 @@ function MobileDeviceInstance({
                 </a>
                 <button
                   onClick={() => handleAppleCalendarAction("REGENERATE_TOKEN")}
-                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 font-extrabold text-xs border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1 transition"
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 font-extrabold text-xs border border-slate-300 flex items-center justify-center gap-1 transition"
                 >
                   <span>🔄</span>
                   <span>구독 URL 재발급</span>
@@ -1741,7 +1711,7 @@ function MobileDeviceInstance({
                       appleCalData?.appleCalendar?.enabled ? "REVOKE_FEED" : "ENABLE_FEED"
                     )
                   }
-                  className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 underline"
+                  className="text-[10px] text-slate-500 hover:text-slate-800 underline"
                 >
                   {appleCalData?.appleCalendar?.enabled
                     ? "구독 피드 일시 차단하기"
@@ -1750,22 +1720,22 @@ function MobileDeviceInstance({
               </div>
 
               {/* 갱신 지연 안내문구 */}
-              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 space-y-1 text-[11px]">
-                <div className="font-extrabold flex items-center gap-1">
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 space-y-1 text-[11px]">
+                <div className="font-extrabold flex items-center gap-1 text-amber-950">
                   <span>⚠️</span>
                   <span>[필독] 아이폰 캘린더 동기화 주기 및 갱신 지연 안내</span>
                 </div>
-                <p className="text-[10px] leading-relaxed">
+                <p className="text-[10px] leading-relaxed text-amber-900">
                   아이폰 캘린더는 Apple/iCloud의 백그라운드 폴링 정책(보통 수십 분~수 시간 간격)에 따라 팀약 서버를 정기 확인합니다.
                   따라서 약속 일정이 변경되거나 취소되더라도 아이폰 화면에 <strong>즉각 반영되지 않고 지연</strong>될 수 있습니다.
                 </p>
-                <p className="text-[10px] font-semibold text-amber-800 dark:text-amber-300">
+                <p className="text-[10px] font-semibold text-amber-900">
                   💡 <strong>즉시 반영 팁</strong>: 아이폰 [캘린더 앱 &gt; 하단 &apos;캘린더&apos; 목록 &gt; 화면을 아래로 당겨 새로고침]을 실행하시면 최신 일정이 즉시 동기화됩니다.
                 </p>
               </div>
 
               {/* 프라이버시 원칙 고지 */}
-              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[10px] flex items-start gap-1">
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[10px] flex items-start gap-1">
                 <span>🔒</span>
                 <span>
                   <strong>개인정보 보호</strong>: 외부 캘린더 피드에는 보안을 위해 상대방 회사·직함 등 민감 정보가 배제되며, 기본적으로 <strong>&apos;팀약 일정&apos;</strong> 중립 명칭으로 안전하게 등록됩니다.
@@ -1774,20 +1744,20 @@ function MobileDeviceInstance({
             </div>
 
             {/* ② Google Calendar 연결 */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-xs flex items-center gap-1.5 text-slate-900 dark:text-white">
+                <span className="font-extrabold text-xs flex items-center gap-1.5 text-slate-900">
                   <span>🗓️</span> ② Google Calendar 실시간 연동
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">OAuth 2.0 / API v3</span>
+                <span className="text-[10px] text-slate-500 font-mono">OAuth 2.0 / API v3</span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-600">
                 Google 캘린더 계정과 연동하여 버튼 클릭 시 실시간으로 일정을 푸시 동기화합니다.
               </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleGoogleCalendarSync(currentMtg.id)}
-                  className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-blue-300 font-extrabold text-xs border border-blue-200 dark:border-slate-700 flex items-center justify-center gap-1.5 transition"
+                  className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 font-extrabold text-xs border border-blue-200 flex items-center justify-center gap-1.5 transition"
                 >
                   <span>📅</span>
                   <span>현재 모임 Google 캘린더 동기화</span>
@@ -1796,19 +1766,19 @@ function MobileDeviceInstance({
             </div>
 
             {/* ③ 1회성 .ICS 파일 다운로드 */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-xs flex items-center gap-1.5 text-slate-900 dark:text-white">
+                <span className="font-extrabold text-xs flex items-center gap-1.5 text-slate-900">
                   <span>📥</span> ③ 1회성 .ICS 파일 다운로드
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">RFC 5545</span>
+                <span className="text-[10px] text-slate-500 font-mono">RFC 5545</span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-600">
                 구독 없이 현재 모임 일정을 개인 파일(.ics)로 내려받아 Outlook, 네이버 캘린더 등에 1회성으로 등록합니다.
               </p>
               <button
                 onClick={() => handleDownloadSingleIcs(currentMtg)}
-                className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 font-extrabold text-xs border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 transition"
+                className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 font-extrabold text-xs border border-slate-200 flex items-center justify-center gap-1.5 transition"
               >
                 <span>💾</span>
                 <span>[{currentMtg.confirmedDate || "오늘"}] 모임 .ICS 파일 다운로드</span>
@@ -1816,17 +1786,17 @@ function MobileDeviceInstance({
             </div>
 
             {/* ④ 중립 문구 당일 아침 알림 센터 */}
-            <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-              <div className="font-extrabold flex items-center gap-1">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
+              <div className="font-extrabold flex items-center gap-1 text-slate-900">
                 <span>🔔</span>
                 <span>중립 문구 당일 아침 알림 센터</span>
               </div>
               {(notifData?.deliveries || []).slice(0, 4).map((nd: any) => (
                 <div
                   key={nd.id}
-                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1 text-[11px]"
+                  className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-[11px] text-slate-800"
                 >
-                  <div className="font-bold text-brand-700 dark:text-amber-300">
+                  <div className="font-bold text-brand-700">
                     [{nd.notificationType}]
                   </div>
                   <div>• 기본 중립 알림: &ldquo;{nd.messagePreview}&rdquo;</div>
@@ -1837,15 +1807,15 @@ function MobileDeviceInstance({
         )}
 
         {activeTab === "place_recommendations" && (
-          <div className="space-y-4 text-xs">
+          <div className="space-y-4 text-xs text-slate-900">
             {/* 상단 액션 카드 */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                  <h2 className="text-base font-extrabold text-slate-900">
                     🍽️ 추천 식당 후보 & 공유
                   </h2>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
+                  <p className="text-[11px] text-slate-600 mt-0.5">
                     모임 장소 및 비즈니스 오찬에 적합한 추천 식당 목록입니다.
                   </p>
                 </div>
@@ -1891,22 +1861,22 @@ function MobileDeviceInstance({
                 return (
                   <div
                     key={place.id}
-                    className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-2.5"
+                    className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-2.5"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                          <span className="text-sm font-extrabold text-slate-900">
                             {pName}
                           </span>
-                          <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-[10px]">
+                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
                             {pCuisine}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-1">
+                        <p className="text-[11px] text-slate-600 mt-1">
                           📍 {pAddr}
                         </p>
-                        <p className="text-[11px] text-slate-700 dark:text-slate-300 mt-1 font-medium">
+                        <p className="text-[11px] text-slate-700 mt-1 font-medium">
                           ✨ {pSummary}
                         </p>
                       </div>
@@ -1915,7 +1885,7 @@ function MobileDeviceInstance({
                     <div className="grid grid-cols-3 gap-2 pt-1">
                       <button
                         onClick={() => handleSharePlace(place)}
-                        className="py-2.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-[11px] border border-amber-200 flex items-center justify-center gap-1 shadow-sm transition active:scale-95"
+                        className="py-2.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-extrabold text-[11px] border border-amber-300 flex items-center justify-center gap-1 shadow-sm transition active:scale-95"
                       >
                         <span>💬</span>
                         <span>카톡 공유</span>
@@ -1924,7 +1894,7 @@ function MobileDeviceInstance({
                         href={mapUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 font-bold text-[11px] border border-slate-200 dark:border-slate-600 flex items-center justify-center gap-1 text-center"
+                        className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 flex items-center justify-center gap-1 text-center"
                       >
                         <span>🗺️</span>
                         <span>지도 보기</span>
@@ -1951,7 +1921,7 @@ function MobileDeviceInstance({
 
         {activeTab === "history" && (
           <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
-            <div className="font-extrabold">
+            <div className="font-extrabold text-slate-900">
               🔐 내 개인 암호화 이력 (방문 장소 평문 컬럼 제거됨)
             </div>
             {histories.map((h) => {
@@ -1959,15 +1929,15 @@ function MobileDeviceInstance({
               return (
                 <div
                   key={h.id}
-                  className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1"
+                  className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-900"
                 >
                   <div className="font-bold text-brand-700">
                     {h.meetingDate} — {dec?.counterpartOrgName || "🔒 암호화됨"}
                   </div>
-                  <div className="text-[11px]">
+                  <div className="text-[11px] text-slate-800">
                     브라우저 복호화 방문 식당: <strong>{dec?.detailedPlaceName}</strong>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">
+                  <div className="text-[10px] font-mono text-slate-500 truncate">
                     DB 저장 행(visited_place_id 없음): {h.encryptedHistoryBlob}
                   </div>
                 </div>
@@ -1977,7 +1947,7 @@ function MobileDeviceInstance({
         )}
       </div>
 
-      <nav className="sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 text-[11px] py-2.5 font-bold z-40 shadow-lg">
+      <nav className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 grid grid-cols-4 text-[11px] py-2.5 font-bold z-40 shadow-lg text-slate-900">
         {[
           { id: "meeting_detail", label: "약속", icon: "📋" },
           { id: "place_recommendations", label: "식당 추천 & 공유", icon: "🍽️" },
@@ -1990,7 +1960,7 @@ function MobileDeviceInstance({
             className={`flex flex-col items-center gap-0.5 ${
               activeTab === t.id
                 ? "text-brand-600 font-extrabold"
-                : "text-slate-400 hover:text-slate-600"
+                : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <span className="text-base">{t.icon}</span>
