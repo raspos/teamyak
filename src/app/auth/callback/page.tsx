@@ -1,0 +1,242 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { consumePreLoginInviteVault, peekPreLoginInviteVault } from "@/lib/crypto";
+
+function maskToken(str?: string | null): string {
+  if (!str) return "[EMPTY]";
+  if (str.length <= 8) return "***";
+  return `${str.slice(0, 4)}***${str.slice(-4)}`;
+}
+
+export default function AuthCallbackPage() {
+  const [status, setStatus] = useState<string>("카카오 로그인 인가 처리 중...");
+  const [error, setError] = useState<{ title: string; message: string; code?: string } | null>(null);
+  const [keyRecoveryFailed, setKeyRecoveryFailed] = useState<boolean>(false);
+  const [targetInviteCode, setTargetInviteCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function processCallback() {
+      try {
+        if (typeof window === "undefined") return;
+
+        const url = new URL(window.location.href);
+        const searchParams = url.searchParams;
+        const hash = window.location.hash.substring(1);
+        const hashParams = new URLSearchParams(hash);
+
+        // 1. URL 파라미터 에러 확인 (사용자 취소, 카카오 인가 실패 등)
+        const urlError = searchParams.get("error") || hashParams.get("error");
+        const urlErrorDesc = searchParams.get("error_description") || hashParams.get("error_description");
+        if (urlError) {
+          setError({
+            title: "카카오 로그인 실패 또는 취소",
+            message: urlErrorDesc || "카카오 인가 과정에서 오류가 발생했거나 사용자가 로그인을 취소했습니다.",
+            code: urlError,
+          });
+          return;
+        }
+
+        // 2. 토큰 및 인가 코드 추출 (로그 노출 방지: 절대 콘솔에 원문 로깅 금지)
+        let accessToken = hashParams.get("access_token") || searchParams.get("access_token");
+        let refreshToken = hashParams.get("refresh_token") || searchParams.get("refresh_token");
+        const authCode = searchParams.get("code");
+        const returnToParam = searchParams.get("returnTo");
+
+        // 3. Supabase PKCE 인가 코드 교환 (code가 존재하고 access_token이 없는 경우)
+        if (authCode && !accessToken) {
+          setStatus("Supabase OAuth 세션 및 보안 토큰 교환 중...");
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+          if (supabaseUrl && anonKey) {
+            try {
+              const tokenRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  apikey: anonKey,
+                },
+                body: JSON.stringify({
+                  auth_code: authCode,
+                }),
+              });
+
+              if (!tokenRes.ok) {
+                const errData = await tokenRes.json().catch(() => ({}));
+                // 코드 만료, 중복 사용, 무효 코드 처리
+                setError({
+                  title: "세션 발급 실패 (인증 코드 만료 또는 재사용)",
+                  message: errData.error_description || "인가 코드가 이미 사용되었거나 만료되었습니다. 다시 로그인해 주세요.",
+                  code: errData.error || "INVALID_PKCE_CODE",
+                });
+                return;
+              }
+
+              const tokenData = await tokenRes.json();
+              accessToken = tokenData.access_token;
+              refreshToken = tokenData.refresh_token;
+            } catch (exchangeErr: any) {
+              setError({
+                title: "인증 서버 통신 실패",
+                message: "Supabase 인증 서버와 통신 중 네트워크 오류가 발생했습니다.",
+                code: "NETWORK_EXCHANGE_ERROR",
+              });
+              return;
+            }
+          }
+        }
+
+        // 4. 발급된 세션 저장 (브라우저 스토리지)
+        if (accessToken) {
+          localStorage.setItem("teamyak_supabase_access_token", accessToken);
+          if (refreshToken) {
+            localStorage.setItem("teamyak_supabase_refresh_token", refreshToken);
+          }
+        }
+
+        // 5. 백엔드 프로필 동기화
+        if (accessToken || authCode) {
+          setStatus("사용자 프로필 및 초대 권한 동기화 중...");
+          try {
+            await fetch("/api/auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "SUPABASE_SESSION_SYNC",
+                hasAccessToken: Boolean(accessToken),
+              }),
+            });
+          } catch {
+            // 백엔드 동기화 실패 시에도 클라이언트 복귀 계속 진행
+          }
+        }
+
+        // 6. 사전 로그인 볼트 확인 및 #k= 암호화 키 복원
+        const vault = peekPreLoginInviteVault();
+        const consumed = consumePreLoginInviteVault();
+
+        let targetUrl = "/";
+        let hasRestoredKey = false;
+
+        if (consumed && consumed.inviteCode && consumed.fragmentKey) {
+          // 정상적으로 암호화 키 복원 완료
+          targetUrl = `/i/${consumed.inviteCode}#k=${consumed.fragmentKey}`;
+          hasRestoredKey = true;
+          setStatus("초대장 및 암호화 키(#k=) 복원 완료! 이동 중...");
+        } else if (returnToParam) {
+          targetUrl = decodeURIComponent(returnToParam);
+          if (consumed?.fragmentKey && !targetUrl.includes("#k=")) {
+            targetUrl = `${targetUrl}#k=${consumed.fragmentKey}`;
+            hasRestoredKey = true;
+          }
+          // 만약 returnTo가 /i/로 시작하는데 #k= 키가 전혀 복원되지 않은 경우
+          if (targetUrl.startsWith("/i/") && !targetUrl.includes("#k=") && !hasRestoredKey) {
+            const codeMatch = targetUrl.match(/\/i\/([^/?#]+)/);
+            if (codeMatch && codeMatch[1]) {
+              setTargetInviteCode(codeMatch[1]);
+            }
+            setKeyRecoveryFailed(true);
+            return;
+          }
+          setStatus("원래 페이지로 이동 중...");
+        } else {
+          setStatus("로그인 완료! 메인 화면으로 이동합니다.");
+        }
+
+        setTimeout(() => {
+          window.location.replace(targetUrl);
+        }, 300);
+      } catch (err: any) {
+        setError({
+          title: "콜백 처리 오류",
+          message: err?.message || "인증 처리 도중 예기치 못한 오류가 발생했습니다.",
+        });
+      }
+    }
+
+    processCallback();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-[380px] bg-white rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+        <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto text-2xl">
+          💬
+        </div>
+        <h2 className="text-base font-extrabold text-slate-900">
+          TEAMYAK 카카오 인증
+        </h2>
+
+        {/* 1. 오류 발생 시 */}
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-left space-y-2">
+            <div className="text-xs font-bold text-red-900 flex items-center gap-1.5">
+              <span>⚠️</span> {error.title}
+            </div>
+            <p className="text-[11px] text-red-700 leading-relaxed">
+              {error.message}
+            </p>
+            {error.code && (
+              <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-mono">
+                {error.code}
+              </span>
+            )}
+            <div className="pt-2 flex gap-2">
+              <a
+                href="/"
+                className="flex-1 py-2 text-center bg-slate-900 text-white rounded-xl text-xs font-bold"
+              >
+                메인으로 돌아가기
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* 2. 브라우저 전환 등으로 암호화 키(#k=) 복원 불가능 시 안전한 재초대 안내 */}
+        {!error && keyRecoveryFailed && (
+          <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl text-left space-y-2.5">
+            <div className="font-extrabold text-amber-900 text-xs flex items-center gap-1.5">
+              <span>🔒</span> 암호화 초대 키 복구 안내
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              카카오 로그인 중 브라우저 전환(카카오톡 인앱 브라우저 등)으로 인해 초대장의 종단간 암호화 키(#k=)가 소실되었습니다.
+            </p>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              모임 상세 정보와 참석자 명단은 오직 초대 링크의 암호키로만 복호화됩니다. 보안을 위해 <strong>호스트에게 카카오톡 초대장을 다시 공유해 달라고 요청</strong>하신 후, 같은 브라우저에서 링크를 다시 열어주세요.
+            </p>
+            <div className="pt-2 space-y-2">
+              {targetInviteCode && (
+                <a
+                  href={`/i/${targetInviteCode}`}
+                  className="block w-full py-2.5 text-center bg-amber-600 text-white rounded-xl text-xs font-extrabold shadow-sm"
+                >
+                  기존 초대장 화면 확인하기
+                </a>
+              )}
+              <a
+                href="/"
+                className="block w-full py-2 text-center bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+              >
+                메인으로 이동
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* 3. 정상 처리 진행 중 */}
+        {!error && !keyRecoveryFailed && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-center space-x-2 text-xs text-slate-600 font-medium">
+              <span className="w-3 h-3 rounded-full border-2 border-brand-600 border-t-transparent animate-spin inline-block" />
+              <span>{status}</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              보안을 위해 암호화 키(#k=)와 세션 상태를 복원하고 있습니다.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

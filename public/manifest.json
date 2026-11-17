@@ -1,0 +1,17 @@
+{
+  "name": "팀약 (TEAMYAK) — 업무용 약속 관리 플랫폼",
+  "short_name": "팀약",
+  "description": "약속은 쉽게, 일정은 자동으로, 만남은 기록으로. 약속은 연결하지만 관계는 소유하지 않습니다.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1D4ED8",
+  "lang": "ko-KR",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMYAK_APPLE_TEAM_ID.kr.teamyak.app",
+        "paths": ["/i/*", "/meetings/*"]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["TEAMYAK_APPLE_TEAM_ID.kr.teamyak.app"]
+  }
+}

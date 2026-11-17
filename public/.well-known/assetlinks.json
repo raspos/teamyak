@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "kr.teamyak.app",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:53:74:6A:11:08:BE:20:9E:51:7A:B4:DF:87:66:83:BE:39:69:89:D3:CD:93:28:44:A2:3A:42:58:62"
+      ]
+    }
+  }
+]
