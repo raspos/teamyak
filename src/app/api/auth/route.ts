@@ -6,6 +6,7 @@ import {
   resolveUserFromRequest,
   createInitialSeedDatabase,
   signSessionToken,
+  verifySignedSessionToken,
   signOAuthState,
   verifyOAuthState,
   SEED_RECOVERY_CODE_KIM,
@@ -81,7 +82,28 @@ export async function GET(req: NextRequest) {
       u_park: SEED_RECOVERY_CODE_PARK,
     },
     availableTestAccounts: db.users.map((u) => {
-      const sess = db.sessions.find((s) => s.userId === u.id && !s.revoked);
+      let sess = db.sessions.find(
+        (s) =>
+          s.userId === u.id &&
+          !s.revoked &&
+          verifySignedSessionToken(s.token).valid
+      );
+      if (!sess) {
+        const sessId = `sess_${u.id}_init_${Date.now()}`;
+        sess = {
+          id: sessId,
+          token: signSessionToken(sessId, u.id),
+          userId: u.id,
+          accountType: u.accountType,
+          deviceLabel: "모바일 기기",
+          revoked: false,
+          expiresAt: new Date(
+            Date.now() + 30 * 24 * 3600 * 1000
+          ).toISOString(),
+          createdAt: new Date().toISOString(),
+        };
+        db.sessions.push(sess);
+      }
       return {
         id: u.id,
         accountType: u.accountType,
@@ -220,6 +242,98 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
+  // 1-2. Supabase Auth 세션 동기화 (실제 카카오 OAuth 완료 후 발급된 Supabase JWT 검증)
+  if (action === "SUPABASE_SESSION_SYNC") {
+    const accessToken =
+      body.accessToken ||
+      req.headers.get("authorization")?.replace("Bearer ", "");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!accessToken || !supabaseUrl || !anonKey) {
+      return NextResponse.json(
+        { error: "MISSING_SUPABASE_TOKEN" },
+        { status: 400 }
+      );
+    }
+
+    let supabaseUser: any = null;
+    try {
+      const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (!userRes.ok) {
+        return NextResponse.json(
+          { error: "INVALID_SUPABASE_TOKEN" },
+          { status: 401 }
+        );
+      }
+      supabaseUser = await userRes.json();
+    } catch {
+      return NextResponse.json(
+        { error: "AUTH_VERIFICATION_FAILED" },
+        { status: 502 }
+      );
+    }
+
+    const userId = supabaseUser.id;
+    const kakaoIdentity = (supabaseUser.identities || []).find(
+      (i: any) => i.provider === "kakao"
+    );
+    const kakaoProviderId =
+      kakaoIdentity?.id ||
+      kakaoIdentity?.identity_data?.sub ||
+      `kakao_${userId}`;
+    const displayName =
+      supabaseUser.user_metadata?.full_name ||
+      supabaseUser.user_metadata?.name ||
+      "카카오 사용자";
+
+    let user = db.users.find((u) => u.id === userId);
+    if (!user) {
+      user = {
+        id: userId,
+        kakaoIdHash: `kakao_hash_${kakaoProviderId}`,
+        accountType: "REAL_KAKAO_OAUTH",
+        displayName,
+        jobTitle: "팀약 회원",
+        teamId: null,
+        createdAt: new Date().toISOString(),
+      };
+      db.users.push(user);
+    }
+
+    const sessId = `sess_${user.id}_${Date.now()}`;
+    const signedToken = signSessionToken(sessId, user.id);
+    const newSess = {
+      id: sessId,
+      token: signedToken,
+      userId: user.id,
+      accountType: user.accountType,
+      deviceLabel: body.deviceLabel || "Kakao OAuth Verified Device",
+      revoked: false,
+      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+    db.sessions.push(newSess);
+    await writeDatabase(db);
+
+    const res = NextResponse.json({
+      ok: true,
+      user,
+      sessionToken: signedToken,
+    });
+    res.cookies.set("teamyak_session", signedToken, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+    });
+    return res;
+  }
+
   // 2. 테스트 계정 로그인 세션 발급 (실제 카카오 계정과 명확히 구분된 TEST_SANDBOX_ACCOUNT 표시)
   if (action === "LOGIN_ACCOUNT") {
     // [보안 감사 1] 프로덕션 환경에서는 테스트 계정 직접 로그인 원천 차단
@@ -257,7 +371,12 @@ export async function POST(req: NextRequest) {
 
     let sess = body.forceNewSession
       ? null
-      : db.sessions.find((s) => s.userId === user.id && !s.revoked);
+      : db.sessions.find(
+          (s) =>
+            s.userId === user.id &&
+            !s.revoked &&
+            verifySignedSessionToken(s.token).valid
+        );
     if (!sess) {
       const sessId = `sess_${user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       sess = {

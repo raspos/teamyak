@@ -1028,6 +1028,22 @@ function MobileDeviceInstance({
           </button>
         </div>
 
+        <button
+          onClick={() => {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            if (supabaseUrl) {
+              const redirectUri = `${window.location.origin}/auth/callback?returnTo=/`;
+              window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=kakao&redirect_to=${encodeURIComponent(
+                redirectUri
+              )}`;
+            }
+          }}
+          className="w-full py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-lg flex items-center justify-center gap-1.5 text-[11px] shadow-sm transition-transform active:scale-98"
+        >
+          <span>💬</span>
+          <span>카카오로 실계정 로그인</span>
+        </button>
+
         <div className="flex items-center gap-1.5 text-xs">
           <span className="text-[11px] text-slate-400 shrink-0">계정:</span>
           <select

@@ -69,6 +69,24 @@ export default function InviteDirectLandingPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fragmentKey, sessionToken]);
 
+  function handleKakaoOAuthLogin(
+    rsvpStatus: "ATTENDING" | "TENTATIVE" | "DECLINED" = "ATTENDING"
+  ) {
+    savePreLoginInviteVault(params.code, rsvpStatus, fragmentKey);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (supabaseUrl) {
+      const returnTo = `/i/${params.code}`;
+      const redirectUri = `${window.location.origin}/auth/callback?returnTo=${encodeURIComponent(
+        returnTo
+      )}`;
+      window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=kakao&redirect_to=${encodeURIComponent(
+        redirectUri
+      )}`;
+    } else {
+      handleRsvpAction(rsvpStatus, false);
+    }
+  }
+
   async function handleRsvpAction(
     rsvpStatus: "ATTENDING" | "TENTATIVE" | "DECLINED",
     confirmedAfterSeniorityReview = false
@@ -241,25 +259,54 @@ export default function InviteDirectLandingPage({
           )}
 
           {!requiresSeniorConfirmation && (
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => handleRsvpAction("ATTENDING", false)}
-                className="py-3.5 rounded-2xl bg-brand-600 text-white font-extrabold text-sm"
-              >
-                ✓ 참석
-              </button>
-              <button
-                onClick={() => handleRsvpAction("TENTATIVE", false)}
-                className="py-3.5 rounded-2xl bg-amber-500 text-white font-bold text-sm"
-              >
-                보류
-              </button>
-              <button
-                onClick={() => handleRsvpAction("DECLINED", false)}
-                className="py-3.5 rounded-2xl bg-slate-200 text-slate-700 font-bold text-sm"
-              >
-                불참
-              </button>
+            <div>
+              {!isLoggedIn ? (
+                <div className="space-y-2.5 pt-1">
+                  <button
+                    onClick={() => handleKakaoOAuthLogin("ATTENDING")}
+                    className="w-full py-4 rounded-2xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
+                  >
+                    <span className="text-base">💬</span>
+                    <span>카카오로 3초 만에 시작하여 참석하기</span>
+                  </button>
+                  <div className="flex justify-center items-center gap-3 text-[11px] text-slate-400">
+                    <button
+                      onClick={() => handleRsvpAction("ATTENDING", false)}
+                      className="underline hover:text-slate-600 font-medium"
+                    >
+                      테스트 계정으로 참석
+                    </button>
+                    <span>•</span>
+                    <button
+                      onClick={() => handleRsvpAction("DECLINED", false)}
+                      className="underline hover:text-slate-600 font-medium"
+                    >
+                      불참
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => handleRsvpAction("ATTENDING", false)}
+                    className="py-3.5 rounded-2xl bg-brand-600 text-white font-extrabold text-sm"
+                  >
+                    ✓ 참석
+                  </button>
+                  <button
+                    onClick={() => handleRsvpAction("TENTATIVE", false)}
+                    className="py-3.5 rounded-2xl bg-amber-500 text-white font-bold text-sm"
+                  >
+                    보류
+                  </button>
+                  <button
+                    onClick={() => handleRsvpAction("DECLINED", false)}
+                    className="py-3.5 rounded-2xl bg-slate-200 text-slate-700 font-bold text-sm"
+                  >
+                    불참
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

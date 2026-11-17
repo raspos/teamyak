@@ -99,14 +99,24 @@ export default function AuthCallbackPage() {
         if (accessToken || authCode) {
           setStatus("사용자 프로필 및 초대 권한 동기화 중...");
           try {
-            await fetch("/api/auth", {
+            const syncRes = await fetch("/api/auth", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+              },
               body: JSON.stringify({
                 action: "SUPABASE_SESSION_SYNC",
-                hasAccessToken: Boolean(accessToken),
+                accessToken,
+                deviceLabel: navigator?.userAgent?.includes("Mobile")
+                  ? "모바일 카카오 브라우저"
+                  : "데스크톱 브라우저",
               }),
             });
+            const syncData = await syncRes.json();
+            if (syncData.sessionToken) {
+              localStorage.setItem("teamyak_session_token", syncData.sessionToken);
+            }
           } catch {
             // 백엔드 동기화 실패 시에도 클라이언트 복귀 계속 진행
           }
