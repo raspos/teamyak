@@ -59,6 +59,7 @@ function getSeniorityBadgeInfo(
   const suffix = status === "CONFIRMED" ? "확정" : "예정";
   if (level === "DIRECTOR") {
     return {
+      level: "DIRECTOR",
       text: `부장급 참석 ${suffix}`,
       badgeClass:
         "bg-blue-100 text-blue-900 border-blue-400 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-500",
@@ -66,6 +67,7 @@ function getSeniorityBadgeInfo(
   }
   if (level === "EXECUTIVE") {
     return {
+      level: "EXECUTIVE",
       text: `임원 참석 ${suffix}`,
       badgeClass:
         "bg-purple-100 text-purple-900 border-purple-400 dark:bg-purple-950/80 dark:text-purple-200 dark:border-purple-500",
@@ -73,12 +75,14 @@ function getSeniorityBadgeInfo(
   }
   if (level === "CEO") {
     return {
+      level: "CEO",
       text: `CEO·기관장 참석 ${suffix}`,
       badgeClass:
         "bg-amber-100 text-amber-950 border-amber-500 font-extrabold dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-400",
     };
   }
   return {
+    level: "STAFF",
     text: "일반 모임",
     badgeClass:
       "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
@@ -95,6 +99,7 @@ interface AccountInfo {
   deviceLabel: string;
   hasKeyBackup: boolean;
   recoveryEntropyBits: number;
+  email?: string;
 }
 
 export default function TeamyakUnifiedApp() {
@@ -309,7 +314,7 @@ export default function TeamyakUnifiedApp() {
         <MobileDeviceInstance
           deviceTitle="팀약 모바일"
           defaultUserId="u_kim"
-          defaultTab="meeting_detail"
+          defaultTab="meetings"
           viewportWidth={viewportWidth}
           darkMode={darkMode}
           accounts={accounts}
@@ -395,7 +400,7 @@ const DEFAULT_PLACES = [
 function MobileDeviceInstance({
   deviceTitle,
   defaultUserId,
-  defaultTab,
+  defaultTab = "meetings",
   viewportWidth,
   darkMode,
   accounts,
@@ -404,7 +409,7 @@ function MobileDeviceInstance({
 }: {
   deviceTitle: string;
   defaultUserId: string;
-  defaultTab: "meeting_detail" | "invite" | "calendar" | "history";
+  defaultTab?: "meetings" | "calendar" | "history" | "settings";
   viewportWidth: number;
   darkMode: boolean;
   accounts: AccountInfo[];
@@ -414,10 +419,33 @@ function MobileDeviceInstance({
   const [sessionToken, setSessionToken] = useState<string>("");
   const [currentUserId, setCurrentUserId] = useState<string>(defaultUserId);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<string>(defaultTab);
+  const [activeTab, setActiveTab] = useState<"meetings" | "calendar" | "history" | "settings">(
+    (defaultTab as any) || "meetings"
+  );
+  const [meetingSubView, setMeetingSubView] = useState<"LIST" | "CREATE" | "DETAIL" | "INVITE_SHARE">("LIST");
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [detailSection, setDetailSection] = useState<
     "PARTICIPANTS" | "AI_PLACE" | "SCHEDULE_HISTORY" | "NEWS"
   >("PARTICIPANTS");
+
+  // 약속 생성 폼 입력 상태
+  const [newTitle, setNewTitle] = useState<string>("");
+  const [newDate, setNewDate] = useState<string>(() => {
+    const tmrw = new Date(Date.now() + 24 * 3600 * 1000);
+    return tmrw.toISOString().slice(0, 10);
+  });
+  const [newStartTime, setNewStartTime] = useState<string>("12:00");
+  const [newEndTime, setNewEndTime] = useState<string>("13:30");
+  const [newAreaHint, setNewAreaHint] = useState<string>("");
+  const [newHeadcount, setNewHeadcount] = useState<number>(2);
+  const [newMeetingType, setNewMeetingType] = useState<string>("LUNCH");
+  const [newSeniorName, setNewSeniorName] = useState<string>("");
+  const [newSeniorTitle, setNewSeniorTitle] = useState<string>("");
+  const [newSeniorLevel, setNewSeniorLevel] = useState<SeniorityLevel>("STAFF");
+  const [newCounterpartOrg, setNewCounterpartOrg] = useState<string>("");
+  const [newHostShareToTeam, setNewHostShareToTeam] = useState<boolean>(false);
+  const [showOptionalFields, setShowOptionalFields] = useState<boolean>(false);
+  const [isSubmittingMeeting, setIsSubmittingMeeting] = useState<boolean>(false);
 
   const [fragmentKey] = useState<string>(DEFAULT_FRAGMENT_KEY);
   const [inviteCode] = useState<string>("inv_9x82a");
@@ -766,9 +794,106 @@ function MobileDeviceInstance({
     }
   }
 
-  async function handleKakaoShare(meetingId: string) {
-    const activeInviteCode = currentMtg?.inviteCode || inviteCode;
-    const inviteUrl = `${window.location.origin}/i/${activeInviteCode}#k=${fragmentKey}`;
+  async function handleCreateNewMeeting(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!newTitle.trim()) {
+      showMsg("약속 제목을 입력해 주세요.");
+      return;
+    }
+    if (!newDate) {
+      showMsg("날짜를 선택해 주세요.");
+      return;
+    }
+    if (!newStartTime) {
+      showMsg("시간을 입력해 주세요.");
+      return;
+    }
+
+    setIsSubmittingMeeting(true);
+    try {
+      const meetingKey = generateFragmentKey ? generateFragmentKey() : DEFAULT_FRAGMENT_KEY;
+      const hasSenior = newSeniorLevel !== "STAFF" && Boolean(newSeniorName.trim());
+      const rawPayload: SensitiveMeetingPayload = {
+        title: newTitle.trim(),
+        counterpartOrgName: newCounterpartOrg.trim() || "미지정",
+        detailedPlaceName: newAreaHint.trim() ? `${newAreaHint.trim()} (장소 협의 중)` : "장소 미정",
+        detailedPlaceAddress: newAreaHint.trim() || "장소 미정",
+        description: `${newTitle.trim()} 약속입니다.`,
+        highestSeniorityLevel: hasSenior ? newSeniorLevel : "STAFF",
+        highestSeniorityStatus: hasSenior ? "SCHEDULED" : "NONE",
+        seniorAttendees: hasSenior ? [
+          {
+            userId: `senior_${Date.now()}`,
+            displayName: newSeniorName.trim(),
+            jobTitle: newSeniorTitle.trim() || "참석자",
+            seniorityLevel: newSeniorLevel,
+            attendanceConfirmed: false,
+            discloseName: true
+          }
+        ] : []
+      };
+
+      const { encryptedPayload, payloadIv } = await encryptMeetingPayload(rawPayload, meetingKey);
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
+
+      const hostAcc = accounts.find((a) => a.id === currentUserId);
+      const hostOrgBadge = hostAcc?.teamId === "team_press_joongang" ? "중앙일보" : (hostAcc?.displayName || "호스트");
+
+      const res = await fetch("/api/meetings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          confirmedDate: newDate,
+          startTime: newStartTime,
+          endTime: newEndTime || "13:30",
+          isTimeTbd: false,
+          isPlaceTbd: !newAreaHint.trim(),
+          placeId: null,
+          areaHint: newAreaHint.trim() || "장소 미정",
+          detailedPlaceName: rawPayload.detailedPlaceName,
+          meetingType: newMeetingType,
+          hostOrgBadge,
+          guestSideLabel: newCounterpartOrg.trim() || "초대받은 분",
+          intendedTargetHint: newCounterpartOrg.trim() || "초대받은 분",
+          encryptedMeetingPayload: encryptedPayload,
+          payloadIv: payloadIv,
+          seedFragmentKeyForTest: meetingKey,
+          hostShareToTeam: newHostShareToTeam,
+          hasSeniorAttendee: hasSenior
+        })
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        showMsg("🎉 새 약속이 생성되었습니다! 카카오톡 초대를 전송하세요.");
+        // Reset inputs
+        setNewTitle("");
+        setNewAreaHint("");
+        setNewSeniorName("");
+        setNewSeniorTitle("");
+        // Transition to invite share view
+        setSelectedMeetingId(data.meeting.id);
+        setMeetingSubView("INVITE_SHARE");
+        await fetchAllDeviceState();
+        onStateMutated();
+      } else {
+        showMsg(`❌ 약속 생성 실패: ${data.error || data.message}`);
+      }
+    } catch (err: any) {
+      showMsg(`❌ 오류: ${err.message}`);
+    } finally {
+      setIsSubmittingMeeting(false);
+    }
+  }
+
+  async function handleKakaoShare(meetingId?: string) {
+    const targetMtg = (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) || currentMtg || directMeetings[0];
+    const targetCode = targetMtg?.inviteCode || inviteCode;
+    const targetKey = targetMtg?.seedFragmentKeyForTest || fragmentKey;
+    const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
+    const mtgTitle = (targetMtg && decryptedMeetingsMap[targetMtg.id]?.title) || targetMtg?.title || "팀약 약속 초대장";
 
     if (
       typeof window !== "undefined" &&
@@ -779,10 +904,10 @@ function MobileDeviceInstance({
         (window as any).Kakao.Share.sendDefault({
           objectType: "feed",
           content: {
-            title: `[TEAMYAK] ${currentMtg?.hostOrgBadge || "업무 오찬"} 약속 초대장`,
-            description: `${currentMtg?.confirmedDate || "약속 일시"} 오후 ${
-              currentMtg?.startTime || "12:00"
-            } · ${currentMtg?.areaHint || "여의도"}`,
+            title: `[TEAMYAK] ${mtgTitle}`,
+            description: `${targetMtg?.confirmedDate || "약속 일시"} 오후 ${
+              targetMtg?.startTime || "12:00"
+            } · ${targetMtg?.areaHint || "장소 미정"}`,
             imageUrl: "https://teamyak.kr/teamyak-og-card.png",
             link: {
               mobileWebUrl: inviteUrl,
@@ -799,7 +924,7 @@ function MobileDeviceInstance({
             },
           ],
         });
-        showMsg("💬 카카오톡 초대장이 카카오톡 앱으로 공유되었습니다.");
+        showMsg("💬 카카오톡 초대장이 카카오톡 앱으로 전송되었습니다.");
         return;
       } catch (err) {
         // Fallback to clipboard
@@ -813,6 +938,19 @@ function MobileDeviceInstance({
       );
     } else {
       showMsg(`초대장 링크: ${inviteUrl}`);
+    }
+  }
+
+  async function handleCopyInviteLink(meetingId?: string) {
+    const targetMtg = (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) || currentMtg || directMeetings[0];
+    const targetCode = targetMtg?.inviteCode || inviteCode;
+    const targetKey = targetMtg?.seedFragmentKeyForTest || fragmentKey;
+    const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(inviteUrl);
+      showMsg("📋 [초대 링크 복사 완료] 클립보드에 복사되었습니다. 카카오톡 대화방에 붙여넣어 공유하세요!");
+    } else {
+      showMsg(`초대 링크: ${inviteUrl}`);
     }
   }
 
@@ -1048,8 +1186,38 @@ function MobileDeviceInstance({
     }
   }
 
-  const currentMtg = directMeetings[0] || null;
+  const currentMtg =
+    (selectedMeetingId
+      ? directMeetings.find((m) => m.id === selectedMeetingId)
+      : directMeetings[0]) ||
+    directMeetings[0] ||
+    null;
   const currentDec = currentMtg ? decryptedMeetingsMap[currentMtg.id] : null;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayFormatted = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }).format(new Date());
+
+  const todayMeetings = directMeetings.filter(
+    (m) => m.confirmedDate === todayStr && m.status !== "CANCELED"
+  );
+  const upcomingMeetings = directMeetings.filter(
+    (m) => m.confirmedDate > todayStr && m.status !== "CANCELED"
+  );
+  const actionRequiredMeetings = directMeetings.filter((m) =>
+    (m.participants || []).some(
+      (p: any) =>
+        p.rsvpStatus === "AWAITING_SENIOR_CONFIRM" ||
+        p.needsReconfirmAfterChange
+    )
+  );
+  const postponedMeetings = directMeetings.filter(
+    (m) => (m.postponementCount || 0) > 0
+  );
 
   // 브라우저 로컬에서 복호화된 내 방문 식당을 제외한 추천 목록 계산
   const browserFilteredRecs = currentMtg
@@ -1059,6 +1227,77 @@ function MobileDeviceInstance({
         excludePastVisited
       )
     : { filteredRecommendations: [], excludedInBrowserPlaceNames: [] };
+
+  function renderMeetingCard(m: any) {
+    const dec = decryptedMeetingsMap[m.id];
+    const title = dec?.title || m.title || "약속";
+    const pBadge = getPostponementBadgeInfo(m.postponementCount);
+    const sBadge = getSeniorityBadgeInfo(
+      dec?.highestSeniorityLevel || (m.hasSeniorAttendee ? "DIRECTOR" : "STAFF"),
+      dec?.highestSeniorityStatus || "NONE"
+    );
+
+    return (
+      <div
+        key={m.id}
+        className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3 hover:border-brand-400 transition"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-bold text-brand-600">
+              {m.hostOrgBadge || "호스트"} 주최
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 tracking-tight mt-0.5">
+              {title}
+            </h3>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            {m.postponementCount > 0 && (
+              <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${pBadge.badgeClass}`}>
+                {pBadge.text}
+              </span>
+            )}
+            {sBadge.level !== "STAFF" && (
+              <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${sBadge.badgeClass}`}>
+                🔐 {sBadge.text}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span>🗓️ {m.confirmedDate} 오후 {m.startTime || "12:00"}</span>
+          <span>·</span>
+          <span className={m.isPlaceTbd ? "text-amber-600" : "text-emerald-700"}>
+            📍 {m.areaHint || "장소 미정"} {m.isPlaceTbd ? "(장소 미정)" : (m.selectedPlace ? `(${m.selectedPlace.name})` : "")}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 pt-0.5">
+          <button
+            onClick={() => {
+              setSelectedMeetingId(m.id);
+              setMeetingSubView("INVITE_SHARE");
+            }}
+            className="py-2.5 px-3 rounded-xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
+          >
+            <span>💬</span>
+            <span>초대하기</span>
+          </button>
+          <button
+            onClick={() => {
+              setSelectedMeetingId(m.id);
+              setMeetingSubView("DETAIL");
+            }}
+            className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
+          >
+            <span>상세 보기</span>
+            <span>→</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col transition-all overflow-hidden mb-8">
@@ -1106,136 +1345,522 @@ function MobileDeviceInstance({
         </div>
       )}
 
-      <div className="p-4 space-y-4 pb-20 min-h-[500px]">
-        {activeTab === "meeting_detail" && (
-          <div className="space-y-3.5 text-xs text-slate-900">
-            {!currentMtg ? (
-              <div className="rounded-2xl p-5 border border-slate-200 bg-white text-center space-y-2 text-slate-700">
-                <div className="font-extrabold text-sm text-slate-900">
-                  🔒 비로그인 또는 미승인 상태입니다
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  비로그인·미승인 사용자에게는 부장급 이상 주요 참석자 배지와 모임 상세가 노출되지 않습니다.
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* 상단 요약 카드 */}
-                <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
+      <div className="p-4 space-y-4 pb-20 min-h-[520px]">
+        {/* ============================================================== */}
+        {/* [메뉴 1] 약속 (생성·초대·참석 관리 중심) */}
+        {/* ============================================================== */}
+        {activeTab === "meetings" && (
+          <div className="space-y-4 text-xs text-slate-900">
+            {/* 서브뷰 1: 내 약속 목록 (LIST) */}
+            {meetingSubView === "LIST" && (
+              <div className="space-y-4">
+                {/* 상단: 오늘 날짜 + 내 약속 + 가장 눈에 띄는 '새 약속 만들기' 주요 버튼 */}
+                <div className="flex items-center justify-between pt-1">
                   <div>
-                    <div className="text-[11px] font-bold text-brand-600">
-                      {currentMtg.hostOrgBadge} 주최
+                    <div className="text-[11px] font-bold text-slate-500">
+                      📅 {todayFormatted}
                     </div>
-                    <h2 className="text-lg font-extrabold tracking-tight mt-0.5 text-slate-900">
-                      {currentDec ? currentDec.title : "삼성생명 홍보팀 오찬"}
+                    <h1 className="text-xl font-black text-slate-900 tracking-tight mt-0.5">
+                      내 약속
+                    </h1>
+                  </div>
+
+                  <button
+                    onClick={() => setMeetingSubView("CREATE")}
+                    className="py-2.5 px-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition"
+                  >
+                    <span className="text-base leading-none font-bold">+</span>
+                    <span>새 약속 만들기</span>
+                  </button>
+                </div>
+
+                {/* 약속 목록이 비어있을 때 (새 약속 만들기 안내) */}
+                {directMeetings.length === 0 ? (
+                  <div className="bg-white rounded-3xl p-8 border border-slate-200 text-center space-y-4 shadow-sm">
+                    <div className="w-16 h-16 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-3xl">
+                      🤝
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        등록된 약속이 없습니다
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        기자 및 기업 홍보 담당자와의 비즈니스 약속을 새로 만들어 보세요.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setMeetingSubView("CREATE")}
+                      className="w-full py-3.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-sm shadow-md active:scale-95 transition"
+                    >
+                      + 새 약속 만들기
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* 카테고리 1: 오늘 약속 */}
+                    {todayMeetings.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                          <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                          <span>📌 오늘 약속 ({todayMeetings.length})</span>
+                        </div>
+                        {todayMeetings.map((m) => renderMeetingCard(m))}
+                      </div>
+                    )}
+
+                    {/* 카테고리 2: 참석 확인이 필요한 약속 */}
+                    {actionRequiredMeetings.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-black text-amber-900 flex items-center gap-1">
+                          <span>⚠️</span>
+                          <span>참석 확인이 필요한 약속 ({actionRequiredMeetings.length})</span>
+                        </div>
+                        {actionRequiredMeetings.map((m) => renderMeetingCard(m))}
+                      </div>
+                    )}
+
+                    {/* 카테고리 3: 날짜가 변경된 약속 */}
+                    {postponedMeetings.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-black text-purple-900 flex items-center gap-1">
+                          <span>🗓️</span>
+                          <span>날짜가 변경된 약속 ({postponedMeetings.length})</span>
+                        </div>
+                        {postponedMeetings.map((m) => renderMeetingCard(m))}
+                      </div>
+                    )}
+
+                    {/* 카테고리 4: 전체 / 다가오는 약속 */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-black text-slate-900 flex items-center gap-1">
+                        <span>⏳</span>
+                        <span>다가오는 약속 ({upcomingMeetings.length})</span>
+                      </div>
+                      {upcomingMeetings.length === 0 && todayMeetings.length === 0 ? (
+                        <div className="text-[11px] text-slate-500 p-3 bg-slate-50 rounded-xl">
+                          다가오는 다른 일정이 없습니다.
+                        </div>
+                      ) : (
+                        upcomingMeetings.map((m) => renderMeetingCard(m))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 서브뷰 2: 새 약속 만들기 (CREATE) */}
+            {meetingSubView === "CREATE" && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => setMeetingSubView("LIST")}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  <span>←</span>
+                  <span>내 약속 목록</span>
+                </button>
+
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4 text-slate-900">
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight">
+                      새 약속 만들기
                     </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      필수 항목(제목, 일시)만 입력하면 바로 약속을 생성하고 카카오톡으로 초대할 수 있습니다.
+                    </p>
+                  </div>
 
-                    <div className="mt-1.5 text-xs font-bold flex flex-wrap items-center gap-1.5 text-slate-700">
-                      <span>
-                        🗓️ {currentMtg.confirmedDate} 오후 {currentMtg.startTime}
-                      </span>
-                      <span>·</span>
-                      <span
-                        className={
-                          currentMtg.isPlaceTbd
-                            ? "text-amber-600 font-bold"
-                            : "text-emerald-700 font-bold"
-                        }
+                  <form onSubmit={handleCreateNewMeeting} className="space-y-4">
+                    {/* 필수 입력 항목 1: 약속 제목 */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                        <span>1. 약속 제목</span>
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        placeholder="예: 삼성생명-중앙일보 정기 오찬"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs font-medium focus:ring-2 focus:ring-brand-500"
+                        required
+                      />
+                    </div>
+
+                    {/* 필수 입력 항목 2, 3: 날짜 및 시간 */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                          <span>2. 날짜</span>
+                          <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={newDate}
+                          onChange={(e) => setNewDate(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs font-medium focus:ring-2 focus:ring-brand-500"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                          <span>3. 시작 시간</span>
+                          <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="time"
+                          value={newStartTime}
+                          onChange={(e) => setNewStartTime(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs font-medium focus:ring-2 focus:ring-brand-500"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* 선택 입력 항목 토글 */}
+                    <div className="pt-2 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowOptionalFields(!showOptionalFields)}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-between border border-slate-200"
                       >
-                        📍 {currentMtg.areaHint} ·{" "}
-                        {currentMtg.selectedPlace
-                          ? currentMtg.selectedPlace.name
-                          : "장소 미확정"}
+                        <span>⚙️ 추가 상세 정보 (장소, 직급, 상대사 등)</span>
+                        <span>{showOptionalFields ? "▲ 접기" : "▼ 펼치기 (선택)"}</span>
+                      </button>
+
+                      {showOptionalFields && (
+                        <div className="mt-3 space-y-3.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                          {/* 4. 장소 또는 지역 */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-700">
+                              4. 장소 또는 지역 (선택)
+                            </label>
+                            <input
+                              type="text"
+                              value={newAreaHint}
+                              onChange={(e) => setNewAreaHint(e.target.value)}
+                              placeholder="예: 여의도, 광화문 (비워두면 '장소 미정'으로 저장)"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs"
+                            />
+                            <p className="text-[10px] text-slate-500">
+                              장소를 정하지 않아도 약속을 바로 만들고 나중에 정할 수 있습니다.
+                            </p>
+                          </div>
+
+                          {/* 5, 6. 참석 예정 인원 & 모임 성격 */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-slate-700">
+                                5. 참석 인원
+                              </label>
+                              <select
+                                value={newHeadcount}
+                                onChange={(e) => setNewHeadcount(Number(e.target.value))}
+                                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs"
+                              >
+                                <option value={2}>2명 (1:1)</option>
+                                <option value={3}>3명</option>
+                                <option value={4}>4명</option>
+                                <option value={5}>5명 이상</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-slate-700">
+                                6. 모임 성격
+                              </label>
+                              <select
+                                value={newMeetingType}
+                                onChange={(e) => setNewMeetingType(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs"
+                              >
+                                <option value="LUNCH">점심 오찬</option>
+                                <option value="DINNER">저녁 만찬</option>
+                                <option value="COFFEE">커피·티타임</option>
+                                <option value="ROUNDTABLE">간담회·브리핑</option>
+                                <option value="OTHER">기타</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* 7. 참석 예정자 및 직급 (임원/부장급 암호화 배지) */}
+                          <div className="space-y-1.5 p-3 bg-purple-50/70 rounded-xl border border-purple-200">
+                            <label className="text-[11px] font-bold text-purple-950">
+                              7. 참석 예정자 및 직급 (선택)
+                            </label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <input
+                                type="text"
+                                value={newSeniorName}
+                                onChange={(e) => setNewSeniorName(e.target.value)}
+                                placeholder="이름 (예: 이재훈)"
+                                className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-slate-900 bg-white text-xs"
+                              />
+                              <input
+                                type="text"
+                                value={newSeniorTitle}
+                                onChange={(e) => setNewSeniorTitle(e.target.value)}
+                                placeholder="직함 (예: 상무)"
+                                className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-slate-900 bg-white text-xs"
+                              />
+                            </div>
+                            <select
+                              value={newSeniorLevel}
+                              onChange={(e) => setNewSeniorLevel(e.target.value as SeniorityLevel)}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-purple-300 text-slate-900 bg-white text-xs font-bold"
+                            >
+                              <option value="STAFF">일반 실무진 (배지 없음)</option>
+                              <option value="DIRECTOR">부장급 참석</option>
+                              <option value="EXECUTIVE">임원(상무/전무) 참석</option>
+                              <option value="CEO">CEO·기관장 참석</option>
+                            </select>
+                            <p className="text-[10px] text-purple-800">
+                              부장급 이상 참석 시 상대방에게 2단계 참석 확인 절차가 자동 적용됩니다.
+                            </p>
+                          </div>
+
+                          {/* 8. 상대 회사·기관 */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-700">
+                              8. 상대 회사·기관 (선택)
+                            </label>
+                            <input
+                              type="text"
+                              value={newCounterpartOrg}
+                              onChange={(e) => setNewCounterpartOrg(e.target.value)}
+                              placeholder="예: 중앙일보 금융팀"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-slate-900 bg-white text-xs"
+                            />
+                          </div>
+
+                          {/* 9. 호스트 측 팀 공유 여부 */}
+                          <div className="pt-1">
+                            <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={newHostShareToTeam}
+                                onChange={(e) => setNewHostShareToTeam(e.target.checked)}
+                                className="rounded text-brand-600 focus:ring-brand-500 w-4 h-4"
+                              />
+                              <span>9. 우리 팀 캘린더에 일정 공유 (게스트 팀 공유는 게스트가 직접 결정)</span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmittingMeeting}
+                      className="w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-sm shadow-md active:scale-95 transition flex items-center justify-center gap-2"
+                    >
+                      <span>{isSubmittingMeeting ? "약속 암호화 생성 중..." : "✓ 약속 생성하고 카카오톡 초대하기"}</span>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* 서브뷰 3: 생성 직후 카카오톡 초대 (INVITE_SHARE) */}
+            {meetingSubView === "INVITE_SHARE" && currentMtg && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => setMeetingSubView("LIST")}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  <span>←</span>
+                  <span>내 약속 목록</span>
+                </button>
+
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4 text-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-black">
+                      ✓ 약속 등록 완료
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ID: {currentMtg.id}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                      카카오톡으로 초대하기
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      약속이 안전하게 생성되었습니다. 아래 버튼을 눌러 상대방에게 초대장을 보내세요.
+                    </p>
+                  </div>
+
+                  {/* 약속 요약 카드 */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs text-slate-800">
+                    <div className="text-[10px] font-bold text-brand-600">
+                      {currentMtg.hostOrgBadge || "호스트"} 주최
+                    </div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      {currentDec?.title || currentMtg.title || "비즈니스 오찬"}
+                    </h3>
+
+                    <div className="flex flex-wrap items-center gap-1.5 font-bold text-slate-700">
+                      <span>🗓️ {currentMtg.confirmedDate} 오후 {currentMtg.startTime || "12:00"}</span>
+                      <span>·</span>
+                      <span className={currentMtg.isPlaceTbd ? "text-amber-600" : "text-emerald-700"}>
+                        📍 {currentMtg.areaHint || "장소 미정"} {currentMtg.isPlaceTbd ? "(장소 미정)" : ""}
                       </span>
                     </div>
 
-                    {/* 순연 배지 & 브라우저에서 복호화된 주요 참석자 배지 (서버 평문 미저장!) */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    <div className="pt-2 border-t border-slate-200 space-y-1 text-[11px] text-slate-600">
+                      <div>• 초대 대상: <strong>{currentMtg.guestSideLabel || "초대받은 분"}</strong></div>
+                      {currentDec?.highestSeniorityLevel && currentDec.highestSeniorityLevel !== "STAFF" && (
+                        <div className="text-purple-900 font-bold">
+                          • 🔐 주요 참석자: {currentDec.highestSeniorityLevel} 참석 (로그인 및 초대 권한 확인 후 안전 공개)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 가장 눈에 띄는 카카오톡 초대 버튼 */}
+                  <button
+                    onClick={() => handleKakaoShare(currentMtg.id)}
+                    className="w-full py-4 rounded-2xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition"
+                  >
+                    <span className="text-lg">💬</span>
+                    <span>카카오톡으로 초대하기</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleCopyInviteLink(currentMtg.id)}
+                    className="w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs border border-slate-300 flex items-center justify-center gap-1.5 active:scale-95 transition"
+                  >
+                    <span>📋</span>
+                    <span>초대 링크 복사</span>
+                  </button>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                    <button
+                      onClick={() => setMeetingSubView("DETAIL")}
+                      className="font-extrabold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                    >
+                      <span>약속 상세 보기</span>
+                      <span>→</span>
+                    </button>
+                    <button
+                      onClick={() => setMeetingSubView("LIST")}
+                      className="text-slate-500 hover:text-slate-800 font-medium"
+                    >
+                      내 약속 목록으로
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 서브뷰 4: 약속 상세 화면 (DETAIL) */}
+            {meetingSubView === "DETAIL" && currentMtg && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => setMeetingSubView("LIST")}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  <span>←</span>
+                  <span>내 약속 목록</span>
+                </button>
+
+                {/* 약속 상단 요약 카드 */}
+                <div className="rounded-3xl p-5 border border-slate-200 bg-white shadow-sm space-y-3.5 text-slate-900">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-bold text-brand-600">
+                        {currentMtg.hostOrgBadge} 주최
+                      </div>
+                      <h2 className="text-lg font-black tracking-tight mt-0.5 text-slate-900">
+                        {currentDec ? currentDec.title : (currentMtg.title || "약속")}
+                      </h2>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1">
                       {(() => {
-                        const pBadge = getPostponementBadgeInfo(
-                          currentMtg.postponementCount
-                        );
+                        const pBadge = getPostponementBadgeInfo(currentMtg.postponementCount);
                         return (
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${pBadge.badgeClass}`}
-                          >
-                            [{pBadge.text}]
+                          <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${pBadge.badgeClass}`}>
+                            {pBadge.text}
                           </span>
                         );
                       })()}
-
                       {(() => {
                         const sBadge = getSeniorityBadgeInfo(
-                          currentDec?.highestSeniorityLevel || "STAFF",
+                          currentDec?.highestSeniorityLevel || (currentMtg.hasSeniorAttendee ? "DIRECTOR" : "STAFF"),
                           currentDec?.highestSeniorityStatus || "NONE"
                         );
-                        return (
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${sBadge.badgeClass}`}
-                          >
-                            [🔐 {sBadge.text}]
+                        return sBadge.level !== "STAFF" ? (
+                          <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${sBadge.badgeClass}`}>
+                            🔐 {sBadge.text}
                           </span>
-                        );
+                        ) : null;
                       })()}
                     </div>
                   </div>
 
+                  <div className="text-xs font-bold flex flex-wrap items-center gap-1.5 text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <span>🗓️ {currentMtg.confirmedDate} 오후 {currentMtg.startTime}</span>
+                    <span>·</span>
+                    <span className={currentMtg.isPlaceTbd ? "text-amber-600 font-bold" : "text-emerald-700 font-bold"}>
+                      📍 {currentMtg.areaHint || "장소 미정"} {currentMtg.isPlaceTbd ? "(장소 미정)" : (currentMtg.selectedPlace ? `(${currentMtg.selectedPlace.name})` : "")}
+                    </span>
+                  </div>
+
+                  {/* 장소 정하기 안내 & 길찾기 */}
                   {currentMtg.isPlaceTbd || !currentMtg.selectedPlace ? (
                     <button
                       onClick={() => setDetailSection("AI_PLACE")}
-                      className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow"
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs shadow flex items-center justify-center gap-1.5 active:scale-95 transition"
                     >
-                      🤖 [AI 장소 추천] 참석자 취향 기반 식당 찾기 (시뮬레이션)
+                      <span>📍</span>
+                      <span>[장소 정하기] AI 맞춤 추천 및 식당 선택하기</span>
                     </button>
                   ) : (
-                    <a
-                      href={currentMtg.selectedPlace.naverMapUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full py-2.5 rounded-xl bg-emerald-600 text-white font-extrabold text-xs text-center"
-                    >
-                      🗺️ 네이버 지도 길찾기 ({currentMtg.selectedPlace.name}) ↗
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={currentMtg.selectedPlace.naverMapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-extrabold text-xs text-center shadow flex items-center justify-center gap-1"
+                      >
+                        <span>🗺️</span>
+                        <span>네이버 지도 길찾기 ({currentMtg.selectedPlace.name}) ↗</span>
+                      </a>
+                      <button
+                        onClick={() => setDetailSection("AI_PLACE")}
+                        className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300"
+                      >
+                        변경
+                      </button>
+                    </div>
                   )}
 
+                  {/* 주요 액션 버튼: 카카오톡 초대 & 캘린더 연동 */}
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
-                      onClick={() => handleKakaoShare(currentMtg.id)}
-                      className="py-2.5 px-3 rounded-xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 transition"
+                      onClick={() => setMeetingSubView("INVITE_SHARE")}
+                      className="py-2.5 px-3 rounded-xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
                     >
                       <span>💬</span>
-                      <span>카카오톡 초대 공유</span>
+                      <span>카카오톡 초대</span>
                     </button>
                     <button
                       onClick={() => setActiveTab("calendar")}
-                      className="py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 font-extrabold text-xs border border-purple-200 shadow-sm flex items-center justify-center gap-1.5 transition"
+                      className="py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 font-extrabold text-xs border border-purple-200 shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
                     >
                       <span>📅</span>
-                      <span>캘린더 자동 연동 허브</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
-                    <button
-                      onClick={() => handleGoogleCalendarSync(currentMtg.id)}
-                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200 flex items-center justify-center gap-1"
-                    >
-                      <span>🗓️</span> Google 동기화
-                    </button>
-                    <button
-                      onClick={() => handleDownloadSingleIcs(currentMtg)}
-                      className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200 flex items-center justify-center gap-1"
-                    >
-                      <span>📥</span> 1회성 .ICS 다운로드
+                      <span>캘린더 연동 허브</span>
                     </button>
                   </div>
                 </div>
 
-                {/* 4대 통합 탭 */}
+                {/* 4대 상세 서브 탭 */}
                 <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold border border-slate-200">
                   {[
                     { id: "PARTICIPANTS", label: "참석자·직급" },
-                    { id: "AI_PLACE", label: "AI 장소추천" },
-                    { id: "SCHEDULE_HISTORY", label: "순연·변경이력" },
+                    { id: "AI_PLACE", label: "장소·식당" },
+                    { id: "SCHEDULE_HISTORY", label: "순연·변경" },
                     { id: "NEWS", label: "관련 뉴스" },
                   ].map((tab) => (
                     <button
@@ -1341,32 +1966,23 @@ function MobileDeviceInstance({
                   </div>
                 )}
 
-                {/* 서브섹션 2: AI 장소 추천 (브라우저 로컬 방문 식당 제외 + 1년 취향 보존 정책) */}
+                {/* 서브섹션 2: 장소 정하기 / AI 맞춤 장소 추천 */}
                 {detailSection === "AI_PLACE" && (
-                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3.5 text-slate-900">
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-sm text-slate-900">
-                        🤖 AI 맞춤 장소 추천
+                        📍 장소 정하기 & 식당 추천
                       </span>
-                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold">
-                        외부 AI/네이버 API 시뮬레이션
+                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
+                        네이버 지도 연동
                       </span>
                     </div>
 
-                    {/* 본인 음식 취향 보존 정책 (기본 MEETING_ONLY, 동의 시 최대 1년, 철회 시 즉시 삭제) */}
+                    {/* 본인 음식 취향 보존 정책 */}
                     <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2 text-slate-900">
                       <div className="font-bold text-brand-800 text-[11px]">
-                        🍽️ 내 음식 취향 등록 (타인에게 비공개 · 기본값: MEETING_ONLY)
+                        🍽️ 내 음식 취향 등록 (타인에게 비공개 · 기본값: 이번 모임만)
                       </div>
-                      {(currentMtg.preferences || []).map((p: any) => (
-                        <div key={p.id} className="text-[11px] text-slate-800">
-                          • 내 설정: 비선호({p.dislikedItems.join(", ")}) · 보존:{" "}
-                          <strong className="text-slate-900">{p.preferenceScope}</strong>{" "}
-                          {p.consentExpiresAt
-                            ? `(만료일: ${p.consentExpiresAt.slice(0, 10)})`
-                            : ""}
-                        </div>
-                      ))}
                       <div className="flex gap-1.5">
                         <input
                           type="text"
@@ -1381,26 +1997,6 @@ function MobileDeviceInstance({
                           저장
                         </button>
                       </div>
-                      <div className="flex items-center justify-between gap-2 text-[10px]">
-                        <label className="flex items-center gap-1 text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={longTermPrefConsent}
-                            onChange={(e) =>
-                              setLongTermPrefConsent(e.target.checked)
-                            }
-                          />
-                          <span>본인 취향 최대 1년 저장 동의 (1년 후 미재동의 시 자동 삭제)</span>
-                        </label>
-                        <button
-                          onClick={() =>
-                            handleWithdrawPreferenceConsent(currentMtg.id)
-                          }
-                          className="text-rose-600 font-bold underline shrink-0"
-                        >
-                          동의 철회·삭제
-                        </button>
-                      </div>
                     </div>
 
                     <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800">
@@ -1412,67 +2008,117 @@ function MobileDeviceInstance({
                         }
                       />
                       <span>
-                        [지난번 방문한 식당 제외] (서버/AI에 과거 방문 장소를 보내지 않고 브라우저에서 내 암호화 이력을 복호화해 로컬 필터링)
+                        [지난번 방문한 식당 제외] (서버/AI 노출 없이 브라우저에서 내 이력 로컬 필터링)
                       </span>
                     </label>
 
                     <button
                       onClick={() => handleRunAiRecommendation(currentMtg.id)}
-                      className="w-full py-2.5 rounded-xl bg-brand-600 text-white font-extrabold"
+                      className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold shadow-sm active:scale-95 transition"
                     >
-                      🔍 AI 장소 후보 추천 실행 (시뮬레이션)
+                      🔍 AI 맞춤 식당 후보 불러오기
                     </button>
 
-                    {browserFilteredRecs.excludedInBrowserPlaceNames.length >
-                      0 && (
-                      <div className="text-[11px] text-emerald-700 font-bold">
-                        🔐 브라우저 로컬 복호화로 제외된 내 과거 방문 식당:{" "}
-                        {browserFilteredRecs.excludedInBrowserPlaceNames.join(
-                          ", "
-                        )}
-                      </div>
-                    )}
+                    {/* 추천 식당 목록 전체 카톡 공유 버튼 */}
+                    <button
+                      onClick={() =>
+                        handleShareAllPlaces(
+                          browserFilteredRecs.filteredRecommendations.length > 0
+                            ? browserFilteredRecs.filteredRecommendations
+                            : placesCatalog.length > 0
+                            ? placesCatalog
+                            : DEFAULT_PLACES
+                        )
+                      }
+                      className="w-full py-3 rounded-xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition"
+                    >
+                      <span>💬</span>
+                      <span>추천 식당 목록 전체 카톡 공유하기</span>
+                    </button>
 
-                    {browserFilteredRecs.filteredRecommendations.map(
-                      (rec: any) => (
-                        <div
-                          key={rec.id}
-                          className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1.5 text-slate-900"
-                        >
-                          <div className="font-extrabold text-sm text-slate-900">
-                            {rec.placeName} ({rec.cuisineType})
-                          </div>
-                          <div className="text-[11px] text-slate-600">
-                            {rec.recommendationReason}
-                          </div>
-                          <div className="flex flex-wrap gap-1 text-[10px]">
-                            {(rec.unverifiedItems || []).map(
-                              (uv: string, i: number) => (
-                                <span
-                                  key={i}
-                                  className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold"
-                                >
-                                  ⚠️ {uv}
-                                </span>
-                              )
-                            )}
-                          </div>
-                          <button
-                            onClick={() =>
-                              handleSelectPlace(currentMtg.id, rec.placeId)
-                            }
-                            className="w-full py-1.5 rounded-lg bg-slate-900 text-white font-bold text-[11px]"
+                    {/* 식당 카드 리스트 */}
+                    <div className="space-y-3 pt-1">
+                      {(browserFilteredRecs.filteredRecommendations.length > 0
+                        ? browserFilteredRecs.filteredRecommendations
+                        : placesCatalog.length > 0
+                        ? placesCatalog
+                        : DEFAULT_PLACES
+                      ).map((place: any) => {
+                        const pName = place.name || place.placeName;
+                        const pCuisine = place.cuisineType;
+                        const pAddr = place.roadAddress;
+                        const pSummary =
+                          place.officialInfoSummary ||
+                          place.recommendationReason ||
+                          "비즈니스 오찬에 적합한 식당입니다.";
+                        const mapUrl =
+                          place.naverMapUrl ||
+                          `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
+
+                        return (
+                          <div
+                            key={place.id}
+                            className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm space-y-2 text-slate-900"
                           >
-                            이 장소로 확정
-                          </button>
-                        </div>
-                      )
-                    )}
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm font-extrabold text-slate-900">
+                                    {pName}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
+                                    {pCuisine}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  📍 {pAddr}
+                                </p>
+                                <p className="text-[11px] text-slate-700 mt-1 font-medium">
+                                  ✨ {pSummary}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-1.5 pt-1">
+                              <button
+                                onClick={() => handleSharePlace(place)}
+                                className="py-2 px-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-extrabold text-[11px] border border-amber-300 flex items-center justify-center gap-1 shadow-sm active:scale-95 transition"
+                              >
+                                <span>💬</span>
+                                <span>카톡 공유</span>
+                              </button>
+                              <a
+                                href={mapUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="py-2 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 flex items-center justify-center gap-1 text-center"
+                              >
+                                <span>🗺️</span>
+                                <span>지도 보기</span>
+                              </a>
+                              <button
+                                onClick={() =>
+                                  handleSelectPlace(
+                                    currentMtg.id,
+                                    place.placeId || place.id
+                                  )
+                                }
+                                className="py-2 px-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center gap-1 active:scale-95 transition"
+                              >
+                                <span>✓</span>
+                                <span>장소 확정</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
+                {/* 서브섹션 3: 일정 순연 및 변경 */}
                 {detailSection === "SCHEDULE_HISTORY" && (
-                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-2.5 text-slate-900">
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3 text-slate-900">
                     <div className="font-extrabold text-sm text-slate-900">
                       🗓️ 일정 변경 및 순연 이력 (누적 순연:{" "}
                       {currentMtg.postponementCount}회)
@@ -1492,6 +2138,7 @@ function MobileDeviceInstance({
                   </div>
                 )}
 
+                {/* 서브섹션 4: 관련 뉴스 */}
                 {detailSection === "NEWS" && (
                   <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2">
                     {(newsData?.articles || []).map((art: any) => (
@@ -1507,110 +2154,14 @@ function MobileDeviceInstance({
                     ))}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* [탭 2] 초대장 화면: 비로그인/미승인 배지 차단 vs 로그인 초대대상자 2단계 참석 확정 */}
-        {/* ================================================================= */}
-        {activeTab === "invite" && (
-          <div className="space-y-3 text-xs">
-            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
-              <div className="bg-[#FEE500] -mx-4 -mt-4 px-4 py-3 rounded-t-2xl flex items-center justify-between">
-                <span className="font-extrabold text-xs text-[#191919]">
-                  💬 TEAMYAK 카카오톡 초대장 (/i/{inviteCode})
-                </span>
-                <span className="text-[10px] font-bold bg-black/10 px-2 py-0.5 rounded">
-                  {isLoggedIn ? "로그인됨" : "비로그인 상태"}
-                </span>
-              </div>
-
-              <div>
-                <h2 className="text-base font-extrabold text-slate-900">
-                  {inviteDecrypted
-                    ? inviteDecrypted.title
-                    : "🔒 [로그인 및 초대 권한 확인 후 제목 공개]"}
-                </h2>
-                <div className="text-xs font-bold text-slate-600 mt-1">
-                  {inviteData?.publicEnvelope?.confirmedDate} 오후{" "}
-                  {inviteData?.publicEnvelope?.startTime || "12:00"} ·{" "}
-                  {inviteData?.publicEnvelope?.areaHint || "여의도"}
-                </div>
-
-                {/* [정책 1 검증] 비로그인·미승인 상태에서는 부장급 이상 배지가 절대 노출되지 않으며,
-                    로그인 후 초대 권한이 확인된 사용자(inviteDecrypted 존재)에게만 참석 확정 전에 표시됨! */}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {!inviteDecrypted ? (
-                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-300 text-[10px] font-bold">
-                      🔒 주요 참석자 배지: 로그인 및 초대 권한 확인 후에만 공개됩니다
-                    </span>
-                  ) : (
-                    (() => {
-                      const sBadge = getSeniorityBadgeInfo(
-                        inviteDecrypted.highestSeniorityLevel || "STAFF",
-                        inviteDecrypted.highestSeniorityStatus || "NONE"
-                      );
-                      return (
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${sBadge.badgeClass}`}
-                        >
-                          [권한 확인됨 · {sBadge.text}]
-                        </span>
-                      );
-                    })()
-                  )}
-                </div>
-              </div>
-
-              {/* 주요 참석자가 존재하는 모임에서 참석 확정 전 2단계 최종 확인 안내 */}
-              {inviteData?.myParticipant?.rsvpStatus ===
-                "AWAITING_SENIOR_CONFIRM" &&
-                inviteDecrypted && (
-                  <div className="p-3 rounded-xl bg-purple-50 border-2 border-purple-400 text-purple-950 space-y-2">
-                    <div className="font-extrabold text-xs">
-                      👔 주요 참석자 구성을 확인한 뒤 참석을 최종 확정해 주세요
-                    </div>
-                    {(inviteDecrypted.seniorAttendees || []).map((sr, i) => (
-                      <div key={i} className="text-[11px] font-semibold">
-                        • {sr.displayName} ({sr.jobTitle}) —{" "}
-                        {sr.attendanceConfirmed ? "참석 확정" : "참석 예정"}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => handleInviteRsvp("ATTENDING", true)}
-                      className="w-full py-2.5 rounded-xl bg-purple-700 text-white font-extrabold text-xs"
-                    >
-                      ✓ 주요 참석자 확인 완료 — 참석 최종 확정하기
-                    </button>
-                  </div>
-                )}
-
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => handleInviteRsvp("ATTENDING", false)}
-                  className="py-3 rounded-xl bg-brand-600 text-white font-extrabold text-xs"
-                >
-                  ✓ 참석
-                </button>
-                <button
-                  onClick={() => handleInviteRsvp("TENTATIVE", false)}
-                  className="py-3 rounded-xl bg-amber-500 text-white font-bold text-xs"
-                >
-                  보류
-                </button>
-                <button
-                  onClick={() => handleInviteRsvp("DECLINED", false)}
-                  className="py-3 rounded-xl bg-slate-200 text-slate-700 font-bold text-xs"
-                >
-                  불참
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
+        {/* ============================================================== */}
+        {/* [메뉴 2] 캘린더 (개인 및 팀 연동 허브) */}
+        {/* ============================================================== */}
         {activeTab === "calendar" && (
           <div className="space-y-4 text-slate-900">
             {/* 상단 헤더 & 개요 */}
@@ -1756,7 +2307,7 @@ function MobileDeviceInstance({
               </p>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => handleGoogleCalendarSync(currentMtg.id)}
+                  onClick={() => handleGoogleCalendarSync(currentMtg ? currentMtg.id : "mtg_1")}
                   className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 font-extrabold text-xs border border-blue-200 flex items-center justify-center gap-1.5 transition"
                 >
                   <span>📅</span>
@@ -1781,7 +2332,7 @@ function MobileDeviceInstance({
                 className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 font-extrabold text-xs border border-slate-200 flex items-center justify-center gap-1.5 transition"
               >
                 <span>💾</span>
-                <span>[{currentMtg.confirmedDate || "오늘"}] 모임 .ICS 파일 다운로드</span>
+                <span>[{currentMtg?.confirmedDate || "오늘"}] 모임 .ICS 파일 다운로드</span>
               </button>
             </div>
 
@@ -1806,111 +2357,38 @@ function MobileDeviceInstance({
           </div>
         )}
 
-        {activeTab === "place_recommendations" && (
-          <div className="space-y-4 text-xs text-slate-900">
-            {/* 상단 액션 카드 */}
-            <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-extrabold text-slate-900">
-                    🍽️ 추천 식당 후보 & 공유
-                  </h2>
-                  <p className="text-[11px] text-slate-600 mt-0.5">
-                    모임 장소 및 비즈니스 오찬에 적합한 추천 식당 목록입니다.
-                  </p>
-                </div>
+        {/* ============================================================== */}
+        {/* [메뉴 3] 이력 (과거 만남 및 방문 식당 기록) */}
+        {/* ============================================================== */}
+        {activeTab === "history" && (
+          <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="font-extrabold text-slate-900 text-sm">
+                📜 내 개인 암호화 만남 이력
               </div>
-
-              {/* 카카오톡 전체 공유 버튼 */}
-              <button
-                onClick={() =>
-                  handleShareAllPlaces(
-                    browserFilteredRecs.filteredRecommendations.length > 0
-                      ? browserFilteredRecs.filteredRecommendations
-                      : placesCatalog.length > 0
-                      ? placesCatalog
-                      : DEFAULT_PLACES
-                  )
-                }
-                className="w-full py-3.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98"
-              >
-                <span>💬</span>
-                <span>추천 식당 목록 전체 카톡 공유하기</span>
-              </button>
+              <span className="text-[10px] text-slate-500">
+                총 {histories.length}건
+              </span>
             </div>
-
-            {/* 개별 식당 카드 목록 */}
-            <div className="space-y-3">
-              {(browserFilteredRecs.filteredRecommendations.length > 0
-                ? browserFilteredRecs.filteredRecommendations
-                : placesCatalog.length > 0
-                ? placesCatalog
-                : DEFAULT_PLACES
-              ).map((place: any) => {
-                const pName = place.name || place.placeName;
-                const pCuisine = place.cuisineType;
-                const pAddr = place.roadAddress;
-                const pSummary =
-                  place.officialInfoSummary ||
-                  place.recommendationReason ||
-                  "비즈니스 오찬에 적합한 식당입니다.";
-                const mapUrl =
-                  place.naverMapUrl ||
-                  `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
-
+            <p className="text-[11px] text-slate-500">
+              서버 평문 저장 없이 브라우저에서 복호화된 개인 만남 기록입니다.
+            </p>
+            <div className="space-y-2">
+              {histories.map((h) => {
+                const dec = decryptedHistoriesMap[h.id];
                 return (
                   <div
-                    key={place.id}
-                    className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 shadow-sm space-y-2.5"
+                    key={h.id}
+                    className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-900"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-extrabold text-slate-900">
-                            {pName}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
-                            {pCuisine}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 mt-1">
-                          📍 {pAddr}
-                        </p>
-                        <p className="text-[11px] text-slate-700 mt-1 font-medium">
-                          ✨ {pSummary}
-                        </p>
-                      </div>
+                    <div className="font-bold text-brand-700">
+                      {h.meetingDate} — {dec?.counterpartOrgName || "🔒 암호화됨"}
                     </div>
-
-                    <div className="grid grid-cols-3 gap-2 pt-1">
-                      <button
-                        onClick={() => handleSharePlace(place)}
-                        className="py-2.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-extrabold text-[11px] border border-amber-300 flex items-center justify-center gap-1 shadow-sm transition active:scale-95"
-                      >
-                        <span>💬</span>
-                        <span>카톡 공유</span>
-                      </button>
-                      <a
-                        href={mapUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 flex items-center justify-center gap-1 text-center"
-                      >
-                        <span>🗺️</span>
-                        <span>지도 보기</span>
-                      </a>
-                      <button
-                        onClick={() =>
-                          handleSelectPlace(
-                            currentMtg ? currentMtg.id : "mtg_1",
-                            place.placeId || place.id
-                          )
-                        }
-                        className="py-2.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center gap-1 transition active:scale-95"
-                      >
-                        <span>✓</span>
-                        <span>장소 확정</span>
-                      </button>
+                    <div className="text-[11px] text-slate-800">
+                      방문 식당: <strong>{dec?.detailedPlaceName || "장소 비공개"}</strong>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400 truncate">
+                      DB 저장 해시(평문 없음): {h.encryptedHistoryBlob}
                     </div>
                   </div>
                 );
@@ -1919,44 +2397,126 @@ function MobileDeviceInstance({
           </div>
         )}
 
-        {activeTab === "history" && (
-          <div className="bg-white text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
-            <div className="font-extrabold text-slate-900">
-              🔐 내 개인 암호화 이력 (방문 장소 평문 컬럼 제거됨)
-            </div>
-            {histories.map((h) => {
-              const dec = decryptedHistoriesMap[h.id];
-              return (
-                <div
-                  key={h.id}
-                  className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-900"
-                >
-                  <div className="font-bold text-brand-700">
-                    {h.meetingDate} — {dec?.counterpartOrgName || "🔒 암호화됨"}
-                  </div>
-                  <div className="text-[11px] text-slate-800">
-                    브라우저 복호화 방문 식당: <strong>{dec?.detailedPlaceName}</strong>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-500 truncate">
-                    DB 저장 행(visited_place_id 없음): {h.encryptedHistoryBlob}
-                  </div>
+        {/* ============================================================== */}
+        {/* [메뉴 4] 설정 (계정 정보, 팀 설정, 진단) */}
+        {/* ============================================================== */}
+        {activeTab === "settings" && (
+          <div className="space-y-4 text-xs text-slate-900">
+            {/* 내 계정 프로필 카드 */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-sm text-slate-900">
+                  👤 내 프로필 및 계정
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                  {isLoggedIn ? "로그인 활성" : "미로그인"}
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">이름</span>
+                  <span className="font-extrabold text-slate-900">
+                    {accounts.find((a) => a.id === currentUserId)?.displayName || "카카오 회원"}
+                  </span>
                 </div>
-              );
-            })}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">소속 및 직함</span>
+                  <span className="font-bold text-slate-800">
+                    {accounts.find((a) => a.id === currentUserId)?.jobTitle || "팀약 회원"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">이메일</span>
+                  <span className="text-slate-700 font-mono text-[10px]">
+                    {accounts.find((a) => a.id === currentUserId)?.email || "카카오 연동 계정"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  const clientId =
+                    process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+                    "b1ec0592928d85a41c49f7b984b0bdd1";
+                  const redirectUri = `${window.location.origin}/auth/callback`;
+                  const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+                    redirectUri
+                  )}&response_type=code&state=${encodeURIComponent("/")}`;
+                  window.location.href = kakaoAuthUrl;
+                }}
+                className="w-full py-3 rounded-2xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
+              >
+                <span>💬</span>
+                <span>카카오 계정 재로그인 / 전환</span>
+              </button>
+            </div>
+
+            {/* 캘린더 연동 바로가기 카드 */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-sm text-slate-900">
+                  📅 캘린더 연동 설정
+                </span>
+                <button
+                  onClick={() => setActiveTab("calendar")}
+                  className="text-brand-600 font-bold text-[11px] underline"
+                >
+                  캘린더 허브 열기 →
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-600">
+                아이폰 기본 캘린더 구독(Webcal) 및 Google Calendar 동기화를 설정하고 관리합니다.
+              </p>
+            </div>
+
+            {/* 개발자 진단 및 테스트 계정 전환 */}
+            <details className="bg-white rounded-3xl p-4 border border-slate-200 text-xs text-slate-700">
+              <summary className="cursor-pointer font-extrabold text-slate-800 py-1">
+                🛠️ 테스트 계정 전환 및 진단 (클릭하여 열기)
+              </summary>
+              <div className="pt-3 space-y-2.5">
+                <div className="text-[11px] text-slate-500">
+                  다른 역할(기자, 홍보팀, 임원 등)의 시점으로 화면을 즉시 전환하여 테스트합니다:
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {accounts.map((acc) => (
+                    <button
+                      key={acc.id}
+                      onClick={() => handleAccountChange(acc.id)}
+                      className={`p-2 rounded-xl text-[11px] text-left border font-semibold transition ${
+                        currentUserId === acc.id
+                          ? "bg-slate-900 text-white border-slate-900 font-bold"
+                          : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <div className="truncate">{acc.displayName}</div>
+                      <div className="text-[9px] opacity-75 truncate">{acc.jobTitle}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </details>
           </div>
         )}
       </div>
 
+      {/* ============================================================== */}
+      {/* 4대 통합 하단 네비게이션: 약속 | 캘린더 | 이력 | 설정 */}
+      {/* ============================================================== */}
       <nav className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-200 grid grid-cols-4 text-[11px] py-2.5 font-bold z-40 shadow-lg text-slate-900">
         {[
-          { id: "meeting_detail", label: "약속", icon: "📋" },
-          { id: "place_recommendations", label: "식당 추천 & 공유", icon: "🍽️" },
-          { id: "calendar", label: "캘린더·알림", icon: "📅" },
-          { id: "invite", label: "초대장", icon: "💌" },
+          { id: "meetings", label: "약속", icon: "📋" },
+          { id: "calendar", label: "캘린더", icon: "📅" },
+          { id: "history", label: "이력", icon: "📜" },
+          { id: "settings", label: "설정", icon: "⚙️" },
         ].map((t) => (
           <button
             key={t.id}
-            onClick={() => setActiveTab(t.id)}
+            onClick={() => {
+              setActiveTab(t.id as any);
+              if (t.id === "meetings") setMeetingSubView("LIST");
+            }}
             className={`flex flex-col items-center gap-0.5 ${
               activeTab === t.id
                 ? "text-brand-600 font-extrabold"

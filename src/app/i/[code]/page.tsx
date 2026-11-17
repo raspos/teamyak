@@ -165,8 +165,8 @@ export default function InviteDirectLandingPage({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl overflow-hidden text-slate-900">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden text-slate-900">
         <div className="bg-[#FEE500] px-4 py-3.5 flex items-center justify-between">
           <span className="font-extrabold text-xs text-[#191919]">
             💬 TEAMYAK 카카오톡 약속 초대장
