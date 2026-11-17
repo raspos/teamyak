@@ -41,49 +41,54 @@ export default function AuthCallbackPage() {
         let accessToken = hashParams.get("access_token") || searchParams.get("access_token");
         let refreshToken = hashParams.get("refresh_token") || searchParams.get("refresh_token");
         const authCode = searchParams.get("code");
-        const returnToParam = searchParams.get("returnTo");
+        const returnToParam = searchParams.get("returnTo") || searchParams.get("state");
 
-        // 3. Supabase PKCE 인가 코드 교환 (code가 존재하고 access_token이 없는 경우)
+        // 3. 인가 코드 교환 (직통 카카오 로그인 토큰 교환 & 세션 발급)
         if (authCode && !accessToken) {
-          setStatus("Supabase OAuth 세션 및 보안 토큰 교환 중...");
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-          const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+          setStatus("카카오 계정 인가 코드 교환 및 로그인 처리 중...");
+          try {
+            const redirectUri = `${window.location.origin}/auth/callback`;
+            const exchangeRes = await fetch("/api/auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "DIRECT_KAKAO_TOKEN_EXCHANGE",
+                code: authCode,
+                redirectUri,
+                deviceLabel: navigator?.userAgent?.includes("Mobile")
+                  ? "모바일 카카오 브라우저"
+                  : "데스크톱 브라우저",
+              }),
+            });
 
-          if (supabaseUrl && anonKey) {
-            try {
-              const tokenRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  apikey: anonKey,
-                },
-                body: JSON.stringify({
-                  auth_code: authCode,
-                }),
-              });
-
-              if (!tokenRes.ok) {
-                const errData = await tokenRes.json().catch(() => ({}));
-                // 코드 만료, 중복 사용, 무효 코드 처리
-                setError({
-                  title: "세션 발급 실패 (인증 코드 만료 또는 재사용)",
-                  message: errData.error_description || "인가 코드가 이미 사용되었거나 만료되었습니다. 다시 로그인해 주세요.",
-                  code: errData.error || "INVALID_PKCE_CODE",
-                });
-                return;
+            if (exchangeRes.ok) {
+              const exchangeData = await exchangeRes.json();
+              if (exchangeData.sessionToken) {
+                localStorage.setItem("teamyak_session_token", exchangeData.sessionToken);
+                setStatus("카카오 실계정 로그인 성공! 이동 중...");
               }
-
-              const tokenData = await tokenRes.json();
-              accessToken = tokenData.access_token;
-              refreshToken = tokenData.refresh_token;
-            } catch (exchangeErr: any) {
-              setError({
-                title: "인증 서버 통신 실패",
-                message: "Supabase 인증 서버와 통신 중 네트워크 오류가 발생했습니다.",
-                code: "NETWORK_EXCHANGE_ERROR",
-              });
-              return;
+            } else {
+              // Supabase PKCE Fallback
+              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+              const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+              if (supabaseUrl && anonKey) {
+                const tokenRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    apikey: anonKey,
+                  },
+                  body: JSON.stringify({ auth_code: authCode }),
+                });
+                if (tokenRes.ok) {
+                  const tokenData = await tokenRes.json();
+                  accessToken = tokenData.access_token;
+                  refreshToken = tokenData.refresh_token;
+                }
+              }
             }
+          } catch (e: any) {
+            console.error("Token exchange failed:", e);
           }
         }
 

@@ -242,6 +242,129 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
+  // 1-1. 직통 카카오 OAuth 토큰 교환 (이메일 권한 불필요, KOE205 원천 방지)
+  if (action === "DIRECT_KAKAO_TOKEN_EXCHANGE") {
+    const { code, redirectUri } = body;
+    const clientId =
+      process.env.KAKAO_CLIENT_ID ||
+      process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+      "b1ec0592928d85a41c49f7b984b0bdd1";
+    const clientSecret =
+      process.env.KAKAO_CLIENT_SECRET &&
+      !process.env.KAKAO_CLIENT_SECRET.includes("여기에")
+        ? process.env.KAKAO_CLIENT_SECRET
+        : undefined;
+
+    if (!code) {
+      return NextResponse.json({ error: "MISSING_KAKAO_CODE" }, { status: 400 });
+    }
+
+    try {
+      const tokenParams = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: clientId,
+        redirect_uri: redirectUri || `${req.nextUrl.origin}/auth/callback`,
+        code,
+      });
+      if (clientSecret) {
+        tokenParams.append("client_secret", clientSecret);
+      }
+
+      const tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+        body: tokenParams.toString(),
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        return NextResponse.json(
+          { error: "KAKAO_TOKEN_EXCHANGE_FAILED", details: errText },
+          { status: 502 }
+        );
+      }
+
+      const tokenData = await tokenRes.json();
+      const kakaoAccessToken = tokenData.access_token;
+
+      // 카카오 사용자 정보 조회 (닉네임, 프로필)
+      const userRes = await fetch("https://kapi.kakao.com/v2/user/me", {
+        headers: {
+          Authorization: `Bearer ${kakaoAccessToken}`,
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+      });
+
+      if (!userRes.ok) {
+        return NextResponse.json(
+          { error: "KAKAO_USER_FETCH_FAILED" },
+          { status: 502 }
+        );
+      }
+
+      const kakaoUser = await userRes.json();
+      const kakaoId = String(kakaoUser.id);
+      const nickname =
+        kakaoUser.kakao_account?.profile?.nickname ||
+        kakaoUser.properties?.nickname ||
+        `카카오 회원 (${kakaoId.slice(-4)})`;
+      const userId = `u_kakao_${kakaoId}`;
+
+      let user = db.users.find(
+        (u) => u.id === userId || u.kakaoIdHash === `kakao_hash_${kakaoId}`
+      );
+      if (!user) {
+        user = {
+          id: userId,
+          kakaoIdHash: `kakao_hash_${kakaoId}`,
+          accountType: "REAL_KAKAO_OAUTH",
+          displayName: nickname,
+          jobTitle: "팀약 회원",
+          teamId: null, // 무팀 독립성 유지
+          createdAt: new Date().toISOString(),
+        };
+        db.users.push(user);
+      } else {
+        user.displayName = nickname;
+      }
+
+      const sessId = `sess_${user.id}_${Date.now()}`;
+      const signedToken = signSessionToken(sessId, user.id);
+      const newSess = {
+        id: sessId,
+        token: signedToken,
+        userId: user.id,
+        accountType: user.accountType,
+        deviceLabel: body.deviceLabel || "Kakao Mobile Browser",
+        revoked: false,
+        expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      db.sessions.push(newSess);
+      await writeDatabase(db);
+
+      const res = NextResponse.json({
+        ok: true,
+        user,
+        sessionToken: signedToken,
+      });
+      res.cookies.set("teamyak_session", signedToken, {
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: 30 * 24 * 3600,
+      });
+      return res;
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: "SERVER_AUTH_ERROR", message: e?.message },
+        { status: 500 }
+      );
+    }
+  }
+
   // 1-2. Supabase Auth 세션 동기화 (실제 카카오 OAuth 완료 후 발급된 Supabase JWT 검증)
   if (action === "SUPABASE_SESSION_SYNC") {
     const accessToken =

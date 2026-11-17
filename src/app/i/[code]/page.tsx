@@ -73,18 +73,15 @@ export default function InviteDirectLandingPage({
     rsvpStatus: "ATTENDING" | "TENTATIVE" | "DECLINED" = "ATTENDING"
   ) {
     savePreLoginInviteVault(params.code, rsvpStatus, fragmentKey);
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (supabaseUrl) {
-      const returnTo = `/i/${params.code}`;
-      const redirectUri = `${window.location.origin}/auth/callback?returnTo=${encodeURIComponent(
-        returnTo
-      )}`;
-      window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=kakao&redirect_to=${encodeURIComponent(
-        redirectUri
-      )}`;
-    } else {
-      handleRsvpAction(rsvpStatus, false);
-    }
+    const clientId =
+      process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+      "b1ec0592928d85a41c49f7b984b0bdd1";
+    const returnTo = `/i/${params.code}`;
+    const redirectUri = `${window.location.origin}/auth/callback`;
+    const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&response_type=code&state=${encodeURIComponent(returnTo)}`;
+    window.location.href = kakaoAuthUrl;
   }
 
   async function handleRsvpAction(

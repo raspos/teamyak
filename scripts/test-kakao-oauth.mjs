@@ -13,7 +13,7 @@ console.log('Supabase URL:', supabaseUrl);
 
 async function testAuthorize() {
   try {
-    const target = `${supabaseUrl}/auth/v1/authorize?provider=kakao&redirect_to=${encodeURIComponent(
+    const target = `${supabaseUrl}/auth/v1/authorize?provider=kakao&scopes=profile_nickname&redirect_to=${encodeURIComponent(
       'https://jeff-aug-francisco-freebsd.trycloudflare.com/auth/callback'
     )}`;
     const res = await fetch(target, {
@@ -26,16 +26,6 @@ async function testAuthorize() {
     console.log('HTTP Status:', res.status);
     const location = res.headers.get('location');
     console.log('Redirect Location:', location);
-
-    if (location && location.includes('kauth.kakao.com')) {
-      console.log('SUCCESS: Supabase Auth is correctly configured and redirects to Kakao OAuth!');
-    } else if (res.status === 400 || res.status === 422) {
-      const body = await res.text();
-      console.log('Response body:', body);
-      console.log('Notice: Kakao provider might not be enabled yet in Supabase Console -> Authentication -> Providers.');
-    } else {
-      console.log('Unexpected response:', res.status, location);
-    }
   } catch (e) {
     console.error('Fetch error:', e.message);
   }

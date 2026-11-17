@@ -1030,13 +1030,14 @@ function MobileDeviceInstance({
 
         <button
           onClick={() => {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            if (supabaseUrl) {
-              const redirectUri = `${window.location.origin}/auth/callback?returnTo=/`;
-              window.location.href = `${supabaseUrl}/auth/v1/authorize?provider=kakao&redirect_to=${encodeURIComponent(
-                redirectUri
-              )}`;
-            }
+            const clientId =
+              process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+              "b1ec0592928d85a41c49f7b984b0bdd1";
+            const redirectUri = `${window.location.origin}/auth/callback`;
+            const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+              redirectUri
+            )}&response_type=code&state=${encodeURIComponent("/")}`;
+            window.location.href = kakaoAuthUrl;
           }}
           className="w-full py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-lg flex items-center justify-center gap-1.5 text-[11px] shadow-sm transition-transform active:scale-98"
         >
