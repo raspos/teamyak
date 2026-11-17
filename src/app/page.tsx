@@ -499,6 +499,22 @@ function MobileDeviceInstance({
     }
   }, [accounts, currentUserId, sessionToken]);
 
+  // Kakao JS SDK 초기화
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).Kakao) {
+      const kakaoKey =
+        process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+        "b1ec0592928d85a41c49f7b984b0bdd1";
+      try {
+        if (!(window as any).Kakao.isInitialized()) {
+          (window as any).Kakao.init(kakaoKey);
+        }
+      } catch (e) {
+        // 이미 초기화되었거나 로드 중
+      }
+    }
+  }, []);
+
   const showMsg = (msg: string) => setToast(msg);
 
   const fetchAllDeviceState = useCallback(async () => {
@@ -895,39 +911,43 @@ function MobileDeviceInstance({
     const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
     const mtgTitle = (targetMtg && decryptedMeetingsMap[targetMtg.id]?.title) || targetMtg?.title || "팀약 약속 초대장";
 
-    if (
-      typeof window !== "undefined" &&
-      (window as any).Kakao &&
-      (window as any).Kakao.isInitialized()
-    ) {
+    if (typeof window !== "undefined" && (window as any).Kakao) {
+      const kakaoKey =
+        process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+        "b1ec0592928d85a41c49f7b984b0bdd1";
       try {
-        (window as any).Kakao.Share.sendDefault({
-          objectType: "feed",
-          content: {
-            title: `[TEAMYAK] ${mtgTitle}`,
-            description: `${targetMtg?.confirmedDate || "약속 일시"} 오후 ${
-              targetMtg?.startTime || "12:00"
-            } · ${targetMtg?.areaHint || "장소 미정"}`,
-            imageUrl: "https://teamyak.kr/teamyak-og-card.png",
-            link: {
-              mobileWebUrl: inviteUrl,
-              webUrl: inviteUrl,
-            },
-          },
-          buttons: [
-            {
-              title: "초대장 확인 및 참석 응답",
+        if (!(window as any).Kakao.isInitialized()) {
+          (window as any).Kakao.init(kakaoKey);
+        }
+        if ((window as any).Kakao.isInitialized()) {
+          (window as any).Kakao.Share.sendDefault({
+            objectType: "feed",
+            content: {
+              title: `[TEAMYAK] ${mtgTitle}`,
+              description: `${targetMtg?.confirmedDate || "약속 일시"} 오후 ${
+                targetMtg?.startTime || "12:00"
+              } · ${targetMtg?.areaHint || "장소 미정"}`,
+              imageUrl: "https://teamyak.kr/teamyak-og-card.png",
               link: {
                 mobileWebUrl: inviteUrl,
                 webUrl: inviteUrl,
               },
             },
-          ],
-        });
-        showMsg("💬 카카오톡 초대장이 카카오톡 앱으로 전송되었습니다.");
-        return;
+            buttons: [
+              {
+                title: "초대장 확인 및 참석 응답",
+                link: {
+                  mobileWebUrl: inviteUrl,
+                  webUrl: inviteUrl,
+                },
+              },
+            ],
+          });
+          showMsg("💬 카카오톡 공유 창이 열렸습니다. 대화 상대를 선택해 초대장을 전송하세요!");
+          return;
+        }
       } catch (err) {
-        // Fallback to clipboard
+        console.warn("Kakao share SDK fallback:", err);
       }
     }
 

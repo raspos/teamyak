@@ -23,6 +23,10 @@ export default function RootLayout({
           strategy="beforeInteractive"
           src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${naverMapClientId}`}
         />
+        <Script
+          strategy="afterInteractive"
+          src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"
+        />
       </head>
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased">
         {children}
