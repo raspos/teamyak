@@ -348,22 +348,39 @@ export default function TeamyakUnifiedApp() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const clientId =
-                  process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
-                  "b1ec0592928d85a41c49f7b984b0bdd1";
-                const redirectUri = `${window.location.origin}/auth/callback`;
-                const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
-                  redirectUri
-                )}&response_type=code&state=${encodeURIComponent("/")}`;
-                window.location.href = kakaoAuthUrl;
-              }}
-              className="py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl flex items-center gap-1.5 text-xs shadow-sm active:scale-95 transition"
-            >
-              <span>💬</span>
-              <span>카카오 로그인</span>
-            </button>
+            {typeof window !== "undefined" &&
+            (localStorage.getItem("teamyak_session_token") ||
+              localStorage.getItem("teamyak_supabase_access_token")) ? (
+              <button
+                onClick={() => {
+                  localStorage.removeItem("teamyak_session_token");
+                  localStorage.removeItem("teamyak_supabase_access_token");
+                  localStorage.removeItem("teamyak_custom_profile");
+                  localStorage.removeItem("teamyak_profile_onboarding_done");
+                  window.location.href = "/";
+                }}
+                className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                로그아웃
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const clientId =
+                    process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+                    "b1ec0592928d85a41c49f7b984b0bdd1";
+                  const redirectUri = `${window.location.origin}/auth/callback`;
+                  const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+                    redirectUri
+                  )}&response_type=code&state=${encodeURIComponent("/")}`;
+                  window.location.href = kakaoAuthUrl;
+                }}
+                className="py-1.5 px-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl flex items-center gap-1.5 text-xs shadow-sm active:scale-95 transition"
+              >
+                <span>💬</span>
+                <span>카카오 로그인</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -485,7 +502,15 @@ function MobileDeviceInstance({
     return "";
   });
   const [currentUserId, setCurrentUserId] = useState<string>(defaultUserId);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return Boolean(
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token")
+      );
+    }
+    return false;
+  });
   const [activeTab, setActiveTab] = useState<"meetings" | "calendar" | "history" | "settings">(
     (defaultTab as any) || "meetings"
   );
@@ -515,7 +540,18 @@ function MobileDeviceInstance({
   const [isSubmittingMeeting, setIsSubmittingMeeting] = useState<boolean>(false);
 
   // 최초 로그인 온보딩 및 프로필 수정 모달 상태
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const token =
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token");
+      const savedProfile = localStorage.getItem("teamyak_custom_profile");
+      if (token && !savedProfile) {
+        return true;
+      }
+    }
+    return false;
+  });
   const [profileNameInput, setProfileNameInput] = useState<string>("");
   const [profileOrgInput, setProfileOrgInput] = useState<string>("");
   const [profileTitleInput, setProfileTitleInput] = useState<string>("");
@@ -601,31 +637,37 @@ function MobileDeviceInstance({
     }
   }, []);
 
-  // 최초 로그인 온보딩 감지
+  // 최초 로그인 온보딩 감지 (프로필 정보가 없으면 무조건 입력 화면 노출)
   useEffect(() => {
-    const curAcc = accounts.find((a) => a.id === currentUserId);
-    if (curAcc && curAcc.accountType === "REAL_KAKAO_OAUTH") {
-      setProfileNameInput(curAcc.displayName || "");
-      if (
-        curAcc.jobTitle === "팀약 회원" &&
-        typeof window !== "undefined" &&
-        !localStorage.getItem("teamyak_profile_onboarding_done")
-      ) {
+    if (typeof window !== "undefined") {
+      const token =
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token");
+      const savedProfile = localStorage.getItem("teamyak_custom_profile");
+      if (token && !savedProfile) {
+        const curAcc = accounts.find((a) => a.id === currentUserId);
+        if (curAcc?.displayName && !profileNameInput) {
+          setProfileNameInput(curAcc.displayName);
+        }
         setShowProfileModal(true);
       }
     }
-  }, [accounts, currentUserId]);
+  }, [accounts, currentUserId, sessionToken, isLoggedIn]);
 
   async function handleSaveProfile() {
     if (!profileNameInput.trim()) {
       showMsg("⚠️ 이름을 입력해 주세요.");
       return;
     }
+    if (!profileOrgInput.trim()) {
+      showMsg("⚠️ 소속(회사명 또는 언론사명)을 입력해 주세요.");
+      return;
+    }
     setIsSavingProfile(true);
     try {
-      const fullTitle = profileOrgInput.trim()
-        ? `${profileOrgInput.trim()} ${profileTitleInput.trim() || "담당자"}`
-        : profileTitleInput.trim() || "팀약 회원";
+      const fullTitle = profileTitleInput.trim()
+        ? `${profileOrgInput.trim()} ${profileTitleInput.trim()}`
+        : `${profileOrgInput.trim()} 담당자`;
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
@@ -1527,6 +1569,47 @@ function MobileDeviceInstance({
     );
   }
 
+  if (!isLoggedIn || !sessionToken) {
+    return (
+      <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col p-8 text-center space-y-6 min-h-[500px] justify-center items-center my-4">
+        <div className="w-20 h-20 rounded-3xl bg-[#FEE500]/20 flex items-center justify-center text-4xl shadow-sm">
+          💬
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black tracking-tight text-slate-900">
+            TEAM<span className="text-amber-500">YAK</span>
+          </h2>
+          <p className="text-xs text-slate-500 leading-relaxed max-w-[280px] mx-auto">
+            기자 및 기업 홍보 담당자를 위한<br />
+            종단간 암호화 비즈니스 약속 서비스
+          </p>
+        </div>
+
+        <div className="w-full max-w-xs pt-4 space-y-3">
+          <button
+            onClick={() => {
+              const clientId =
+                process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+                "b1ec0592928d85a41c49f7b984b0bdd1";
+              const redirectUri = `${window.location.origin}/auth/callback`;
+              const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+                redirectUri
+              )}&response_type=code&state=${encodeURIComponent("/")}`;
+              window.location.href = kakaoAuthUrl;
+            }}
+            className="w-full py-4 rounded-2xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+          >
+            <span className="text-lg">💬</span>
+            <span>카카오로 3초 만에 시작하기</span>
+          </button>
+          <p className="text-[11px] text-slate-400">
+            로그인 후 내 정보(이름, 소속)를 입력하고 약속을 시작하세요.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col transition-all overflow-hidden mb-8">
       {/* 모바일 상단 바 */}
@@ -1534,30 +1617,48 @@ function MobileDeviceInstance({
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
           <span className="text-xs font-black text-white">
-            {accounts.find((a) => a.id === currentUserId)?.displayName ||
-              "카카오 회원"}
+            {(() => {
+              const saved = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
+              if (saved) {
+                try {
+                  const p = JSON.parse(saved);
+                  if (p.displayName) return p.displayName;
+                } catch {}
+              }
+              const cur = accounts.find((a) => a.id === currentUserId);
+              return cur?.displayName || "카카오 회원";
+            })()}
           </span>
           <span className="text-[10px] text-slate-400">
-            ({accounts.find((a) => a.id === currentUserId)?.jobTitle ||
-              "팀약 회원"})
+            {(() => {
+              const saved = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
+              if (saved) {
+                try {
+                  const p = JSON.parse(saved);
+                  if (p.orgName && p.jobTitle) return `(${p.orgName} ${p.jobTitle})`;
+                  if (p.orgName) return `(${p.orgName})`;
+                  if (p.jobTitle) return `(${p.jobTitle})`;
+                } catch {}
+              }
+              const cur = accounts.find((a) => a.id === currentUserId);
+              return cur?.jobTitle ? `(${cur.jobTitle})` : "";
+            })()}
           </span>
         </div>
 
         <button
           onClick={() => {
-            const clientId =
-              process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
-              "b1ec0592928d85a41c49f7b984b0bdd1";
-            const redirectUri = `${window.location.origin}/auth/callback`;
-            const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
-              redirectUri
-            )}&response_type=code&state=${encodeURIComponent("/")}`;
-            window.location.href = kakaoAuthUrl;
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("teamyak_session_token");
+              localStorage.removeItem("teamyak_supabase_access_token");
+              localStorage.removeItem("teamyak_custom_profile");
+              localStorage.removeItem("teamyak_profile_onboarding_done");
+              window.location.href = "/";
+            }
           }}
-          className="py-1 px-2.5 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-lg flex items-center gap-1 text-[10px] shadow-sm transition active:scale-95"
+          className="py-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-[10px] transition"
         >
-          <span>💬</span>
-          <span>카카오 로그인</span>
+          로그아웃
         </button>
       </div>
 
@@ -2798,18 +2899,20 @@ function MobileDeviceInstance({
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="text-center space-y-1">
-              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-2xl mx-auto mb-2">
+              <div className="w-12 h-12 rounded-2xl bg-[#FEE500]/30 text-amber-900 flex items-center justify-center text-2xl mx-auto mb-2 font-bold">
                 👋
               </div>
-              <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
-                프로필을 등록해 주세요
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                {typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile")
+                  ? "환영합니다! 내 정보를 입력해 주세요"
+                  : "내 프로필 수정"}
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                기자 및 기업 홍보 담당자와의 약속 생성·초대 시 표시될 정보를 확인해 주세요.
+                약속 초대장을 만들 때 주최자 프로필로 상대방에게 표시됩니다.
               </p>
             </div>
 
-            <div className="space-y-3 pt-2 text-left">
+            <div className="space-y-3.5 pt-2 text-left">
               <div>
                 <label className="text-[11px] font-bold text-slate-700 block mb-1">
                   이름 (성함) <span className="text-red-500">*</span>
@@ -2819,20 +2922,20 @@ function MobileDeviceInstance({
                   value={profileNameInput}
                   onChange={(e) => setProfileNameInput(e.target.value)}
                   placeholder="예: 홍길동"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
                 />
               </div>
 
               <div>
                 <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                  소속 회사 / 언론사
+                  소속 회사 / 언론사 <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={profileOrgInput}
                   onChange={(e) => setProfileOrgInput(e.target.value)}
-                  placeholder="예: 중앙일보, 삼성생명, 스타트업 등"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
+                  placeholder="예: 조선일보, 카카오, 삼성생명 등"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
                 />
               </div>
 
@@ -2844,27 +2947,33 @@ function MobileDeviceInstance({
                   type="text"
                   value={profileTitleInput}
                   onChange={(e) => setProfileTitleInput(e.target.value)}
-                  placeholder="예: 경제부 기자, 홍보팀 과장, 대표 등"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
+                  placeholder="예: 경제부 기자, 홍보팀 팀장, 과장 등"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-xs font-bold text-slate-900 bg-white"
                 />
               </div>
             </div>
 
-            <div className="pt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowProfileModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
-              >
-                나중에 하기
-              </button>
+            <div className="pt-3 flex gap-2">
+              {typeof window !== "undefined" && localStorage.getItem("teamyak_custom_profile") ? (
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                >
+                  취소
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleSaveProfile}
                 disabled={isSavingProfile}
-                className="flex-1 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-md transition disabled:opacity-50"
+                className="w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-sm shadow-md transition disabled:opacity-50 active:scale-95 cursor-pointer"
               >
-                {isSavingProfile ? "저장 중..." : "저장 완료"}
+                {isSavingProfile
+                  ? "저장 중..."
+                  : typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile")
+                  ? "입력 완료하고 팀약 시작하기 →"
+                  : "저장 완료"}
               </button>
             </div>
           </div>
