@@ -31,6 +31,14 @@ export default function InviteDirectLandingPage({
       } else {
         setFragmentKey("7f9a2b4c8e1d0a3f9911223344556677");
       }
+
+      const savedToken =
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token");
+      if (savedToken) {
+        setSessionToken(savedToken);
+        setIsLoggedIn(true);
+      }
     }
   }, []);
 
@@ -84,55 +92,29 @@ export default function InviteDirectLandingPage({
     window.location.href = kakaoAuthUrl;
   }
 
+  async function handleTestAccountRsvp(
+    rsvpStatus: "ATTENDING" | "TENTATIVE" | "DECLINED" = "ATTENDING"
+  ) {
+    const loginRes = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "LOGIN_ACCOUNT", userId: "u_park" }),
+    });
+    const loginData = await loginRes.json();
+    if (loginData.ok && loginData.sessionToken) {
+      setIsLoggedIn(true);
+      setSessionToken(loginData.sessionToken);
+      localStorage.setItem("teamyak_session_token", loginData.sessionToken);
+      await loadInvitation(loginData.sessionToken);
+    }
+  }
+
   async function handleRsvpAction(
     rsvpStatus: "ATTENDING" | "TENTATIVE" | "DECLINED",
     confirmedAfterSeniorityReview = false
   ) {
     if (!isLoggedIn) {
-      // 비로그인 상태: 카카오 로그인 전 초대 응답 상태와 암호화 키(#k=)를 안전하게 세션 볼트에 보존
-      const vault = savePreLoginInviteVault(params.code, rsvpStatus, fragmentKey);
-      const loginRes = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "LOGIN_ACCOUNT", userId: "u_park" }),
-      });
-      const loginData = await loginRes.json();
-      if (loginData.ok) {
-        const restored = consumePreLoginInviteVault(vault.oauthStateNonce);
-        setIsLoggedIn(true);
-        setSessionToken(loginData.sessionToken);
-        const restoredKey = restored?.fragmentKey || fragmentKey;
-        setFragmentKey(restoredKey);
-
-        const rsvpRes = await fetch(`/api/invitations/${params.code}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${loginData.sessionToken}`,
-          },
-          body: JSON.stringify({
-            rsvpStatus: restored?.rsvpIntent || rsvpStatus,
-            confirmedAfterSeniorityReview,
-          }),
-        });
-        const rsvpData = await rsvpRes.json();
-        if (rsvpData.requiresSeniorConfirmation) {
-          setRequiresSeniorConfirmation(true);
-          setMessage(
-            "👔 이 모임에는 부장급 이상 주요 참석자가 포함되어 있습니다. 아래 직급을 확인 후 최종 참석을 확정해 주세요."
-          );
-        } else {
-          setRequiresSeniorConfirmation(false);
-          setMessage(
-            `✅ 카카오 로그인 후 [${
-              restored?.rsvpIntent || rsvpStatus
-            }] 응답과 암호화 키(#k=)가 복원되어 참석 등록 및 캘린더 자동 등록(제목: '${
-              rsvpData.externalCalendarMapping?.exportedTitle || "팀약 일정"
-            }')이 완료되었습니다.`
-          );
-        }
-        await loadInvitation(loginData.sessionToken, restoredKey);
-      }
+      handleKakaoOAuthLogin(rsvpStatus);
       return;
     }
 
@@ -185,17 +167,17 @@ export default function InviteDirectLandingPage({
 
           <div>
             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-bold text-[10px]">
-              {inviteData?.publicEnvelope?.hostOrgBadge || "호스트"}
+              {inviteData?.publicEnvelope?.hostOrgBadge || "호스트"} 주최
             </span>
             <h1 className="text-lg font-extrabold mt-1">
               {decrypted
                 ? decrypted.title
-                : "🔒 [승인된 참석자에게만 복호화되는 약속 초대장]"}
+                : (inviteData?.publicEnvelope?.title || "🔒 비즈니스 약속 초대장")}
             </h1>
             <p className="text-[11px] text-slate-500 mt-1">
               {decrypted
                 ? decrypted.description
-                : "카카오 로그인 및 초대 권한 확인 전에는 URL #k= 키가 있어도 서버가 암호문 반환을 차단합니다."}
+                : "카카오 로그인 및 참석 시 상세 장소와 전체 내용이 안전하게 복호화됩니다."}
             </p>
 
             {decrypted && decrypted.highestSeniorityLevel && decrypted.highestSeniorityLevel !== "STAFF" && (
@@ -268,14 +250,14 @@ export default function InviteDirectLandingPage({
                   </button>
                   <div className="flex justify-center items-center gap-3 text-[11px] text-slate-400">
                     <button
-                      onClick={() => handleRsvpAction("ATTENDING", false)}
+                      onClick={() => handleTestAccountRsvp("ATTENDING")}
                       className="underline hover:text-slate-600 font-medium"
                     >
                       테스트 계정으로 참석
                     </button>
                     <span>•</span>
                     <button
-                      onClick={() => handleRsvpAction("DECLINED", false)}
+                      onClick={() => handleKakaoOAuthLogin("DECLINED")}
                       className="underline hover:text-slate-600 font-medium"
                     >
                       불참

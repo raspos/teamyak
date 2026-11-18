@@ -1418,15 +1418,44 @@ export function resolveUserFromRequest(
 
   const verified = verifySignedSessionToken(rawToken);
   if (verified.valid && verified.sessionId && verified.userId) {
-    const sess = db.sessions.find(
+    let sess = db.sessions.find(
       (s) =>
         s.id === verified.sessionId &&
         s.userId === verified.userId &&
         !s.revoked &&
         new Date(s.expiresAt).getTime() > Date.now()
     );
-    if (!sess) return null;
-    return db.users.find((u) => u.id === sess.userId) || null;
+    if (!sess) {
+      // Serverless resilience: cryptographically verified session token issued by our HMAC secret
+      sess = {
+        id: verified.sessionId,
+        token: rawToken,
+        userId: verified.userId,
+        accountType: verified.userId.startsWith("u_kakao_")
+          ? "REAL_KAKAO_OAUTH"
+          : "TEST_SANDBOX_ACCOUNT",
+        deviceLabel: "Verified Session",
+        revoked: false,
+        expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      db.sessions.push(sess);
+    }
+    let user = db.users.find((u) => u.id === sess!.userId);
+    if (!user && verified.userId.startsWith("u_kakao_")) {
+      const kakaoId = verified.userId.replace("u_kakao_", "");
+      user = {
+        id: verified.userId,
+        kakaoIdHash: `kakao_hash_${kakaoId}`,
+        accountType: "REAL_KAKAO_OAUTH",
+        displayName: "카카오 회원",
+        jobTitle: "팀약 회원",
+        teamId: null,
+        createdAt: new Date().toISOString(),
+      };
+      db.users.push(user);
+    }
+    return user || null;
   }
 
   const legacySess = db.sessions.find(

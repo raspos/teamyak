@@ -110,7 +110,12 @@ export default function TeamyakUnifiedApp() {
   const [globalVerifyLog, setGlobalVerifyLog] = useState<string[]>([]);
   const [isRunningTests, setIsRunningTests] = useState<boolean>(false);
   const [syncPulse, setSyncPulse] = useState<number>(0);
-  const [initialUserId, setInitialUserId] = useState<string>("u_kim");
+  const [initialUserId, setInitialUserId] = useState<string>(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("teamyak_session_token")) {
+      return "";
+    }
+    return "u_kim";
+  });
 
   const triggerGlobalSync = useCallback(() => {
     setSyncPulse((p) => p + 1);
@@ -444,7 +449,16 @@ function MobileDeviceInstance({
   syncPulse: number;
   onStateMutated: () => void;
 }) {
-  const [sessionToken, setSessionToken] = useState<string>("");
+  const [sessionToken, setSessionToken] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token") ||
+        ""
+      );
+    }
+    return "";
+  });
   const [currentUserId, setCurrentUserId] = useState<string>(defaultUserId);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"meetings" | "calendar" | "history" | "settings">(
@@ -483,7 +497,9 @@ function MobileDeviceInstance({
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
 
   const [fragmentKey] = useState<string>(DEFAULT_FRAGMENT_KEY);
-  const [inviteCode] = useState<string>("inv_9x82a");
+  const [latestInviteCode, setLatestInviteCode] = useState<string>("");
+  const [latestInviteKey, setLatestInviteKey] = useState<string>("");
+  const [inviteCode, setInviteCode] = useState<string>("inv_9x82a");
   const [masterSecret, setMasterSecret] = useState<string>(
     DEFAULT_MASTER_SECRETS[defaultUserId] || "master-secret-u_kim"
   );
@@ -660,7 +676,11 @@ function MobileDeviceInstance({
       const mRes = await fetch("/api/meetings", { headers });
       if (mRes.ok) {
         const mJson = await mRes.json();
-        const list = mJson.directMeetings || [];
+        let list = mJson.directMeetings || [];
+        if (currentUserId.startsWith("u_kakao_")) {
+          // 카카오 실계정 사용자에게는 테스트용 샘플 모임(mtg_1: 김민준 대리)을 목록에서 제외
+          list = list.filter((m: any) => m.id !== "mtg_1" || m.createdBy === currentUserId);
+        }
         setDirectMeetings(list);
         if (mJson.placesCatalog) setPlacesCatalog(mJson.placesCatalog);
 
@@ -961,8 +981,12 @@ function MobileDeviceInstance({
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
 
-      const hostAcc = accounts.find((a) => a.id === currentUserId);
-      const hostOrgBadge = hostAcc?.teamId === "team_press_joongang" ? "중앙일보" : (hostAcc?.displayName || "호스트");
+      const curAcc = accounts.find((a) => a.id === currentUserId);
+      const hostOrgBadge = curAcc?.teamId && curAcc.teamId !== "null"
+        ? (curAcc.teamId === "team_press_joongang" ? "중앙일보" : curAcc.teamId)
+        : (curAcc?.jobTitle && curAcc.jobTitle !== "팀약 회원"
+            ? `${curAcc.displayName} (${curAcc.jobTitle})`
+            : (curAcc?.displayName || "호스트"));
 
       const res = await fetch("/api/meetings", {
         method: "POST",
@@ -991,6 +1015,19 @@ function MobileDeviceInstance({
       const data = await res.json();
       if (data.ok) {
         showMsg("🎉 새 약속이 생성되었습니다! 카카오톡 초대를 전송하세요.");
+        const createdMtg = {
+          ...data.meeting,
+          inviteCode: data.inviteCode,
+          seedFragmentKeyForTest: meetingKey,
+        };
+        setDirectMeetings((prev) => [createdMtg, ...prev.filter((m) => m.id !== createdMtg.id)]);
+        setDecryptedMeetingsMap((prev) => ({
+          ...prev,
+          [createdMtg.id]: rawPayload,
+        }));
+        setLatestInviteCode(data.inviteCode);
+        setLatestInviteKey(meetingKey);
+        setInviteCode(data.inviteCode);
         // Reset inputs
         setNewTitle("");
         setNewAreaHint("");
@@ -1012,9 +1049,17 @@ function MobileDeviceInstance({
   }
 
   async function handleKakaoShare(meetingId?: string) {
-    const targetMtg = (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) || currentMtg || directMeetings[0];
-    const targetCode = targetMtg?.inviteCode || inviteCode;
-    const targetKey = targetMtg?.seedFragmentKeyForTest || fragmentKey;
+    const targetMtg =
+      (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) ||
+      (selectedMeetingId ? directMeetings.find((m) => m.id === selectedMeetingId) : null) ||
+      currentMtg;
+
+    const targetCode = targetMtg?.inviteCode || latestInviteCode || inviteCode;
+    const targetKey = targetMtg?.seedFragmentKeyForTest || latestInviteKey || fragmentKey;
+    if (!targetCode) {
+      showMsg("⚠️ 공유할 약속이 없습니다. 먼저 새 약속을 만들어 주세요.");
+      return;
+    }
     const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
     const mtgTitle = (targetMtg && decryptedMeetingsMap[targetMtg.id]?.title) || targetMtg?.title || "팀약 약속 초대장";
 
@@ -1067,9 +1112,17 @@ function MobileDeviceInstance({
   }
 
   async function handleCopyInviteLink(meetingId?: string) {
-    const targetMtg = (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) || currentMtg || directMeetings[0];
-    const targetCode = targetMtg?.inviteCode || inviteCode;
-    const targetKey = targetMtg?.seedFragmentKeyForTest || fragmentKey;
+    const targetMtg =
+      (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) ||
+      (selectedMeetingId ? directMeetings.find((m) => m.id === selectedMeetingId) : null) ||
+      currentMtg;
+
+    const targetCode = targetMtg?.inviteCode || latestInviteCode || inviteCode;
+    const targetKey = targetMtg?.seedFragmentKeyForTest || latestInviteKey || fragmentKey;
+    if (!targetCode) {
+      showMsg("⚠️ 공유할 약속이 없습니다. 먼저 새 약속을 만들어 주세요.");
+      return;
+    }
     const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(inviteUrl);
@@ -1314,7 +1367,7 @@ function MobileDeviceInstance({
   const currentMtg =
     (selectedMeetingId
       ? directMeetings.find((m) => m.id === selectedMeetingId)
-      : directMeetings[0]) ||
+      : null) ||
     directMeetings[0] ||
     null;
   const currentDec = currentMtg ? decryptedMeetingsMap[currentMtg.id] : null;

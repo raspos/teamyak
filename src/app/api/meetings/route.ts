@@ -131,6 +131,13 @@ export async function POST(req: NextRequest) {
   const guestSideId = `ms_${meetingId}_guest`;
   const inviteCode = `inv_${Math.random().toString(36).substring(2, 8)}`;
 
+  const finalHostOrgBadge =
+    hostOrgBadge && hostOrgBadge !== "삼성생명 홍보팀"
+      ? hostOrgBadge
+      : currentUser.jobTitle && currentUser.jobTitle !== "팀약 회원"
+      ? `${currentUser.displayName} (${currentUser.jobTitle})`
+      : currentUser.displayName || "호스트";
+
   const newMeeting = {
     id: meetingId,
     status: (isTimeTbd ? "SCHEDULING" : "CONFIRMED") as
@@ -146,7 +153,7 @@ export async function POST(req: NextRequest) {
     isPlaceTbd: Boolean(isPlaceTbd && !placeId),
     placeId: placeId || null,
     areaHint,
-    hostOrgBadge,
+    hostOrgBadge: finalHostOrgBadge,
     sequenceVersion: 1,
     postponementCount: 0,
     scheduleChangeCount: 0,
