@@ -623,6 +623,10 @@ function MobileDeviceInstance({
   const [aiSpacePref, setAiSpacePref] = useState<string>("조용한 곳, 개별 룸");
   const [aiOtherCond, setAiOtherCond] = useState<string>("주차 가능");
   const [excludePastVisited, setExcludePastVisited] = useState<boolean>(true);
+  const [placeSearchQuery, setPlaceSearchQuery] = useState<string>("");
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState<boolean>(false);
+  const [searchedPlaces, setSearchedPlaces] = useState<any[] | null>(null);
+  const [customDirectPlaceInput, setCustomDirectPlaceInput] = useState<string>("");
   const [myDislikedInput, setMyDislikedInput] = useState<string>(
     "생선 요리 비선호, 매운 음식 비선호"
   );
@@ -903,57 +907,150 @@ function MobileDeviceInstance({
     fetchAllDeviceState();
   }
 
-  async function handleRunAiRecommendation(meetingId: string) {
-    const res = await fetch(`/api/meetings/${meetingId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionToken}`,
-      },
-      body: JSON.stringify({
-        action: "RECOMMEND_PLACES",
-        area: aiArea,
-        headcount: aiHeadcount,
-        meetingPurpose: "업무 오찬",
-        preferredCuisines: [aiCuisine],
-        spacePreferences: aiSpacePref.split(",").map((s) => s.trim()),
-        otherConditions: aiOtherCond.split(",").map((s) => s.trim()),
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      const localFiltered = filterRecommendationsInBrowser(
-        data.recommendations || [],
-        Object.values(decryptedHistoriesMap),
-        excludePastVisited
-      );
-      showMsg(
-        `🤖 [시뮬레이션 안내] AI 맞춤 장소 후보 추천 완료! 브라우저에서 복호화한 내 과거 방문 식당(${
-          localFiltered.excludedInBrowserPlaceNames.join(", ") || "없음"
-        })을 서버/AI 노출 없이 로컬 제외하여 ${
-          localFiltered.filteredRecommendations.length
-        }곳을 표시합니다.`
-      );
-      onStateMutated();
-      fetchAllDeviceState();
+  async function handleSearchPlaces(queryStr: string) {
+    const q = queryStr.trim();
+    if (!q) {
+      setSearchedPlaces(null);
+      return;
+    }
+    setIsSearchingPlaces(true);
+    try {
+      const res = await fetch(`/api/places/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.places)) {
+        setSearchedPlaces(data.places);
+        showMsg(`🔍 '${q}' 관련 식당 후보 ${data.places.length}곳을 찾았습니다.`);
+      } else {
+        showMsg(`⚠️ 검색 실패: ${data.message || data.error || "검색 결과가 없습니다."}`);
+      }
+    } catch {
+      showMsg("⚠️ 식당 검색 중 통신 오류가 발생했습니다.");
+    } finally {
+      setIsSearchingPlaces(false);
     }
   }
 
-  async function handleSelectPlace(meetingId: string, placeId: string) {
-    const res = await fetch(`/api/meetings/${meetingId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionToken}`,
-      },
-      body: JSON.stringify({ action: "SELECT_PLACE", placeId }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      showMsg(`📍 [${data.selectedPlace.name}] 장소가 확정되었습니다.`);
-      onStateMutated();
-      fetchAllDeviceState();
+  async function handleRunAiRecommendation(meetingId: string, overrideArea?: string) {
+    const targetMtg = directMeetings.find((m) => m.id === meetingId) || currentMtg;
+    const areaToUse =
+      (overrideArea && overrideArea.trim()) ||
+      (placeSearchQuery && placeSearchQuery.trim()) ||
+      (targetMtg?.areaHint && targetMtg.areaHint !== "장소 협의 중" && targetMtg.areaHint !== "장소 미정" ? targetMtg.areaHint : null) ||
+      aiArea ||
+      "여의도";
+
+    setIsSearchingPlaces(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          action: "RECOMMEND_PLACES",
+          area: areaToUse,
+          headcount: aiHeadcount,
+          meetingPurpose: "업무 오찬",
+          preferredCuisines: [aiCuisine],
+          spacePreferences: aiSpacePref.split(",").map((s) => s.trim()),
+          otherConditions: aiOtherCond.split(",").map((s) => s.trim()),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const localFiltered = filterRecommendationsInBrowser(
+          data.recommendations || [],
+          Object.values(decryptedHistoriesMap),
+          excludePastVisited
+        );
+        // 클라이언트 로컬 상태 즉시 갱신
+        setDirectMeetings((prev) =>
+          prev.map((m) =>
+            m.id === meetingId
+              ? { ...m, recommendations: data.recommendations }
+              : m
+          )
+        );
+        setSearchedPlaces(localFiltered.filteredRecommendations);
+        showMsg(
+          `🤖 [${areaToUse}] AI 맞춤 장소 후보 추천 완료 (${localFiltered.filteredRecommendations.length}곳)`
+        );
+        onStateMutated();
+        fetchAllDeviceState();
+      } else {
+        showMsg(`⚠️ 추천 실패: ${data.message || data.error || "다시 시도해 주세요."}`);
+      }
+    } catch {
+      showMsg("⚠️ AI 맞춤 추천 통신 중 오류가 발생했습니다.");
+    } finally {
+      setIsSearchingPlaces(false);
     }
+  }
+
+  async function handleSelectPlace(meetingId: string, place: any) {
+    const placeId = typeof place === "string" ? place : (place?.placeId || place?.id);
+    const placeObj = typeof place === "object" ? place : null;
+    const pName = placeObj?.name || placeObj?.placeName || (typeof place === "string" ? place : "식당");
+
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          action: "SELECT_PLACE",
+          placeId,
+          place: placeObj,
+          customPlaceName: pName,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const resolvedPlace = data.selectedPlace || placeObj || { id: placeId, name: pName };
+        // 즉각 UI에 선택 장소 반영
+        setDirectMeetings((prev) =>
+          prev.map((m) =>
+            m.id === meetingId
+              ? {
+                  ...m,
+                  placeId: resolvedPlace.id,
+                  selectedPlace: resolvedPlace,
+                  isPlaceTbd: false,
+                  areaHint: resolvedPlace.name,
+                }
+              : m
+          )
+        );
+        showMsg(`📍 [${resolvedPlace.name}] 장소가 성공적으로 확정되었습니다!`);
+        onStateMutated();
+        fetchAllDeviceState();
+      } else {
+        showMsg(`⚠️ 장소 확정 실패: ${data.message || data.error || "다시 시도해 주세요."}`);
+      }
+    } catch {
+      showMsg("⚠️ 장소 확정 요청 중 오류가 발생했습니다.");
+    }
+  }
+
+  async function handleSelectDirectCustomPlace(meetingId: string) {
+    const name = customDirectPlaceInput.trim();
+    if (!name) {
+      showMsg("확정할 식당 또는 장소명을 입력해 주세요.");
+      return;
+    }
+    const customObj = {
+      id: `custom_${Date.now()}`,
+      name,
+      cuisineType: "비즈니스 다이닝",
+      roadAddress: `${name} (호스트 직접 지정 장소)`,
+      naverMapUrl: `https://map.naver.com/p/search/${encodeURIComponent(name)}`,
+      officialInfoSummary: "호스트가 직접 지정한 모임 식당",
+    };
+    await handleSelectPlace(meetingId, customObj);
+    setCustomDirectPlaceInput("");
   }
 
   async function handleSaveMyPreference(meetingId: string) {
@@ -2468,85 +2565,209 @@ function MobileDeviceInstance({
 
                 {/* 서브섹션 2: 장소 정하기 / AI 맞춤 장소 추천 */}
                 {detailSection === "AI_PLACE" && (
-                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-3.5 text-slate-900">
+                  <div className="rounded-2xl p-4 border border-slate-200 bg-white shadow-sm space-y-4 text-slate-900">
                     <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-sm text-slate-900">
-                        📍 장소 정하기 & 식당 추천
+                      <span className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                        <span>📍</span>
+                        <span>장소 정하기 & 맞춤 식당</span>
                       </span>
-                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-bold">
                         네이버 지도 연동
                       </span>
                     </div>
 
-                    {/* 본인 음식 취향 보존 정책 */}
-                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2 text-slate-900">
-                      <div className="font-bold text-brand-800 text-[11px]">
-                        🍽️ 내 음식 취향 등록 (타인에게 비공개 · 기본값: 이번 모임만)
+                    {/* 현재 확정된 장소가 있는 경우 안내 카드 */}
+                    {currentMtg.selectedPlace ? (
+                      <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1.5 text-slate-900">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black text-emerald-800 flex items-center gap-1">
+                            <span>✓</span>
+                            <span>확정된 모임 식당</span>
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-200/80 text-emerald-900 font-bold">
+                            {currentMtg.selectedPlace.cuisineType || "비즈니스 다이닝"}
+                          </span>
+                        </div>
+                        <div className="text-base font-black text-slate-900">
+                          {currentMtg.selectedPlace.name}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          📍 {currentMtg.selectedPlace.roadAddress || currentMtg.selectedPlace.address || "위치 정보 등록 완료"}
+                        </p>
+                        <div className="pt-1 flex gap-2">
+                          <a
+                            href={
+                              currentMtg.selectedPlace.naverMapUrl ||
+                              `https://map.naver.com/p/search/${encodeURIComponent(currentMtg.selectedPlace.name)}`
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="py-1.5 px-3 rounded-xl bg-white border border-emerald-300 text-emerald-900 text-xs font-bold shadow-sm inline-flex items-center gap-1"
+                          >
+                            <span>🗺️</span>
+                            <span>네이버 지도에서 보기</span>
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                        <span>📍 현재 <strong>장소 협의 중</strong>입니다. 아래에서 식당을 확정하세요.</span>
+                      </div>
+                    )}
+
+                    {/* 1. 실시간 장소 & 식당 검색 바 */}
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                      <div className="text-xs font-black text-slate-900 flex items-center gap-1">
+                        <span>🔍</span>
+                        <span>식당 및 지역 직접 검색</span>
                       </div>
                       <div className="flex gap-1.5">
                         <input
                           type="text"
-                          value={myDislikedInput}
-                          onChange={(e) => setMyDislikedInput(e.target.value)}
-                          className="flex-1 px-2 py-1 rounded border border-slate-300 text-slate-900 text-[11px] bg-white"
+                          value={placeSearchQuery}
+                          onChange={(e) => setPlaceSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSearchPlaces(placeSearchQuery);
+                            }
+                          }}
+                          placeholder={currentMtg.areaHint ? `${currentMtg.areaHint} 맛집 또는 식당명 검색` : "지역 또는 식당명 검색 (예: 강남, 판교, 을지로)"}
+                          className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                         />
                         <button
-                          onClick={() => handleSaveMyPreference(currentMtg.id)}
-                          className="px-2.5 py-1 rounded bg-brand-600 text-white font-bold text-[11px]"
+                          type="button"
+                          onClick={() => handleSearchPlaces(placeSearchQuery)}
+                          disabled={isSearchingPlaces}
+                          className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs shadow-sm active:scale-95 transition whitespace-nowrap cursor-pointer"
                         >
-                          저장
+                          {isSearchingPlaces ? "검색 중..." : "검색"}
+                        </button>
+                      </div>
+
+                      {/* 빠른 지역 추천 칩 */}
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {["강남", "여의도", "판교", "을지로", "광화문", "마포"].map((area) => (
+                          <button
+                            key={area}
+                            type="button"
+                            onClick={() => {
+                              setPlaceSearchQuery(area);
+                              handleSearchPlaces(area);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-brand-500 text-[11px] font-bold text-slate-700 hover:text-brand-600 shadow-2xs active:scale-95 transition cursor-pointer"
+                          >
+                            📍 {area}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 2. AI 맞춤 추천 버튼 & 취향 필터 */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRunAiRecommendation(currentMtg.id)}
+                        disabled={isSearchingPlaces}
+                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-700 hover:to-indigo-700 text-white font-black text-xs shadow-md active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>🤖</span>
+                        <span>
+                          [{currentMtg.areaHint && currentMtg.areaHint !== "장소 협의 중" ? currentMtg.areaHint : "내 약속 지역"}] AI 맞춤 식당 추천 불러오기
+                        </span>
+                      </button>
+
+                      <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 px-1">
+                        <input
+                          type="checkbox"
+                          checked={excludePastVisited}
+                          onChange={(e) => setExcludePastVisited(e.target.checked)}
+                          className="rounded text-brand-600 focus:ring-brand-500"
+                        />
+                        <span>
+                          [지난번 방문한 식당 제외] (내 만남 이력 로컬 자동 필터링)
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* 3. 식당명 직접 입력하여 즉시 확정하기 */}
+                    <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                      <div className="text-[11px] font-black text-amber-950 flex items-center gap-1">
+                        <span>✍️</span>
+                        <span>알고 계신 식당 직접 입력하여 확정</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={customDirectPlaceInput}
+                          onChange={(e) => setCustomDirectPlaceInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSelectDirectCustomPlace(currentMtg.id);
+                            }
+                          }}
+                          placeholder="식당명 직접 입력 (예: 페럼타워 안즈)"
+                          className="flex-1 px-3 py-1.5 rounded-xl border border-amber-300 text-slate-900 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDirectCustomPlace(currentMtg.id)}
+                          className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-sm active:scale-95 transition whitespace-nowrap cursor-pointer"
+                        >
+                          ✓ 직접 확정
                         </button>
                       </div>
                     </div>
 
-                    <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={excludePastVisited}
-                        onChange={(e) =>
-                          setExcludePastVisited(e.target.checked)
-                        }
-                      />
-                      <span>
-                        [지난번 방문한 식당 제외] (서버/AI 노출 없이 브라우저에서 내 이력 로컬 필터링)
-                      </span>
-                    </label>
-
+                    {/* 4. 추천 식당 목록 전체 카톡 공유 버튼 */}
                     <button
-                      onClick={() => handleRunAiRecommendation(currentMtg.id)}
-                      className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold shadow-sm active:scale-95 transition"
-                    >
-                      🔍 AI 맞춤 식당 후보 불러오기
-                    </button>
-
-                    {/* 추천 식당 목록 전체 카톡 공유 버튼 */}
-                    <button
+                      type="button"
                       onClick={() =>
                         handleShareAllPlaces(
-                          browserFilteredRecs.filteredRecommendations.length > 0
+                          searchedPlaces && searchedPlaces.length > 0
+                            ? searchedPlaces
+                            : browserFilteredRecs.filteredRecommendations.length > 0
                             ? browserFilteredRecs.filteredRecommendations
                             : placesCatalog.length > 0
                             ? placesCatalog
                             : DEFAULT_PLACES
                         )
                       }
-                      className="w-full py-3 rounded-xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition"
+                      className="w-full py-3 rounded-2xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition cursor-pointer"
                     >
-                      <span>💬</span>
-                      <span>추천 식당 목록 전체 카톡 공유하기</span>
+                      <span className="text-base">💬</span>
+                      <span>추천 식당 목록 카카오톡으로 공유하기</span>
                     </button>
 
-                    {/* 식당 카드 리스트 */}
+                    {/* 5. 식당 카드 리스트 */}
                     <div className="space-y-3 pt-1">
-                      {(browserFilteredRecs.filteredRecommendations.length > 0
+                      <div className="flex items-center justify-between text-xs font-black text-slate-900 px-1">
+                        <span>
+                          {searchedPlaces ? "검색 결과 식당 목록" : "추천 식당 후보"}
+                        </span>
+                        {searchedPlaces && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchedPlaces(null)}
+                            className="text-[11px] text-brand-600 hover:underline"
+                          >
+                            초기 추천으로 복원
+                          </button>
+                        )}
+                      </div>
+
+                      {(searchedPlaces && searchedPlaces.length > 0
+                        ? searchedPlaces
+                        : browserFilteredRecs.filteredRecommendations.length > 0
                         ? browserFilteredRecs.filteredRecommendations
                         : placesCatalog.length > 0
                         ? placesCatalog
                         : DEFAULT_PLACES
                       ).map((place: any) => {
                         const pName = place.name || place.placeName;
-                        const pCuisine = place.cuisineType;
-                        const pAddr = place.roadAddress;
+                        const pCuisine = place.cuisineType || "비즈니스 다이닝";
+                        const pAddr = place.roadAddress || place.address || "위치 정보";
                         const pSummary =
                           place.officialInfoSummary ||
                           place.recommendationReason ||
@@ -2554,35 +2775,48 @@ function MobileDeviceInstance({
                         const mapUrl =
                           place.naverMapUrl ||
                           `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
+                        const isCurrentSelected =
+                          currentMtg.selectedPlace?.id === (place.placeId || place.id) ||
+                          currentMtg.selectedPlace?.name === pName;
 
                         return (
                           <div
-                            key={place.id}
-                            className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm space-y-2 text-slate-900"
+                            key={place.id || place.placeId || pName}
+                            className={`rounded-2xl p-4 border shadow-sm space-y-2.5 transition ${
+                              isCurrentSelected
+                                ? "bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-500/20"
+                                : "bg-white border-slate-200"
+                            }`}
                           >
                             <div className="flex items-start justify-between gap-1.5">
                               <div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-sm font-extrabold text-slate-900">
                                     {pName}
                                   </span>
                                   <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
                                     {pCuisine}
                                   </span>
+                                  {isCurrentSelected && (
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-black text-[10px] border border-emerald-300">
+                                      ✓ 현재 확정됨
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                <p className="text-[11px] text-slate-500 mt-1">
                                   📍 {pAddr}
                                 </p>
-                                <p className="text-[11px] text-slate-700 mt-1 font-medium">
+                                <p className="text-[11px] text-slate-700 mt-1 font-medium leading-relaxed">
                                   ✨ {pSummary}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-1.5 pt-1">
+                            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
                               <button
+                                type="button"
                                 onClick={() => handleSharePlace(place)}
-                                className="py-2 px-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-extrabold text-[11px] border border-amber-300 flex items-center justify-center gap-1 shadow-sm active:scale-95 transition"
+                                className="py-2.5 px-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-extrabold text-[11px] border border-amber-300 flex items-center justify-center gap-1 shadow-sm active:scale-95 transition cursor-pointer"
                               >
                                 <span>💬</span>
                                 <span>카톡 공유</span>
@@ -2591,22 +2825,22 @@ function MobileDeviceInstance({
                                 href={mapUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="py-2 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 flex items-center justify-center gap-1 text-center"
+                                className="py-2.5 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 flex items-center justify-center gap-1 text-center cursor-pointer"
                               >
                                 <span>🗺️</span>
-                                <span>지도 보기</span>
+                                <span>네이버 지도</span>
                               </a>
                               <button
-                                onClick={() =>
-                                  handleSelectPlace(
-                                    currentMtg.id,
-                                    place.placeId || place.id
-                                  )
-                                }
-                                className="py-2 px-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] shadow-sm flex items-center justify-center gap-1 active:scale-95 transition"
+                                type="button"
+                                onClick={() => handleSelectPlace(currentMtg.id, place)}
+                                className={`py-2.5 px-1.5 rounded-xl font-extrabold text-[11px] shadow-sm flex items-center justify-center gap-1 active:scale-95 transition cursor-pointer ${
+                                  isCurrentSelected
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-slate-900 hover:bg-slate-800 text-white"
+                                }`}
                               >
-                                <span>✓</span>
-                                <span>장소 확정</span>
+                                <span>{isCurrentSelected ? "✓" : "선택"}</span>
+                                <span>{isCurrentSelected ? "확정됨" : "장소 확정"}</span>
                               </button>
                             </div>
                           </div>

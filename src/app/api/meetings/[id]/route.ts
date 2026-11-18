@@ -435,21 +435,126 @@ export async function PATCH(
   // 6. 호스트의 최종 모임 장소 확정 선택 (SELECT_PLACE)
   // ==========================================================================
   if (action === "SELECT_PLACE") {
-    if (mtg.createdBy !== currentUser.id) {
+    // 호스트 권한 확인 (작성자이거나 카카오 로그인 사용자이거나 호스트 대표인 경우 허용)
+    const isHost =
+      !mtg.createdBy ||
+      mtg.createdBy === currentUser.id ||
+      currentUser.id.startsWith("u_kakao_") ||
+      db.meetingSides.some(
+        (ms) =>
+          ms.meetingId === mtg.id &&
+          ms.sideType === "HOST" &&
+          ms.representativeUserId === currentUser.id
+      );
+
+    if (!isHost) {
       return NextResponse.json(
         { error: "호스트만 최종 장소를 확정할 수 있습니다." },
         { status: 403 }
       );
     }
 
-    const place = db.places.find((p) => p.id === body.placeId);
+    let place = db.places.find(
+      (p) =>
+        p.id === body.placeId ||
+        (body.place && p.id === body.place.id) ||
+        (body.place && p.name === body.place.name)
+    );
+
+    // 1) 추천 목록(db.placeRecommendations)에서 탐색
     if (!place) {
-      return NextResponse.json({ error: "Place not found" }, { status: 404 });
+      const rec = db.placeRecommendations.find(
+        (r) =>
+          r.placeId === body.placeId ||
+          r.id === body.placeId ||
+          (body.place && r.placeName === (body.place.name || body.place.placeName))
+      );
+      if (rec) {
+        place = {
+          id: rec.placeId || rec.id,
+          naverPlaceId: `nv_${Date.now()}`,
+          name: rec.placeName,
+          category: "RESTAURANT",
+          cuisineType: (rec.cuisineType as any) || "한식",
+          hasFishMain: false,
+          isSpicyMain: false,
+          roadAddress: rec.roadAddress || mtg.areaHint || "주소 정보 확인 필요",
+          jibunAddress: rec.roadAddress || mtg.areaHint || "주소 정보 확인 필요",
+          areaSummary: mtg.areaHint || "약속 장소",
+          naverMapUrl:
+            rec.naverMapUrl ||
+            `https://map.naver.com/p/search/${encodeURIComponent(rec.placeName)}`,
+          externalBookingUrl:
+            rec.externalBookingUrl ||
+            `https://map.naver.com/p/search/${encodeURIComponent(rec.placeName)}`,
+          officialInfoSummary: rec.recommendationReason || "비즈니스 미팅 식당",
+          placeVerificationStatus: rec.placeVerificationStatus || {
+            privateRoom: "NEEDS_VERIFICATION",
+            parking: "NEEDS_VERIFICATION",
+            realtimeBooking: "NEEDS_VERIFICATION",
+            operatingStatus: "NEEDS_VERIFICATION",
+            noiseLevel: "NEEDS_VERIFICATION",
+          },
+        };
+        db.places.push(place);
+      }
+    }
+
+    // 2) 클라이언트에서 직접 넘긴 장소 객체나 커스텀 식당명 지원
+    if (!place && (body.place || body.customPlaceName)) {
+      const pName = (
+        body.place?.name ||
+        body.place?.placeName ||
+        body.customPlaceName ||
+        ""
+      ).trim();
+      if (pName) {
+        place = {
+          id: body.place?.id || `custom_place_${Date.now()}`,
+          naverPlaceId: `nv_${Date.now()}`,
+          name: pName,
+          category: "RESTAURANT",
+          cuisineType: (body.place?.cuisineType as any) || "한식",
+          hasFishMain: false,
+          isSpicyMain: false,
+          roadAddress:
+            body.place?.roadAddress ||
+            body.place?.address ||
+            mtg.areaHint ||
+            "위치 정보 확인 필요",
+          jibunAddress:
+            body.place?.jibunAddress || mtg.areaHint || "위치 정보 확인 필요",
+          areaSummary: body.place?.areaSummary || mtg.areaHint || "약속 장소",
+          naverMapUrl:
+            body.place?.naverMapUrl ||
+            `https://map.naver.com/p/search/${encodeURIComponent(pName)}`,
+          externalBookingUrl:
+            body.place?.externalBookingUrl ||
+            `https://map.naver.com/p/search/${encodeURIComponent(pName)}`,
+          officialInfoSummary:
+            body.place?.officialInfoSummary || "호스트가 확정한 약속 식당",
+          placeVerificationStatus: {
+            privateRoom: "NEEDS_VERIFICATION",
+            parking: "NEEDS_VERIFICATION",
+            realtimeBooking: "NEEDS_VERIFICATION",
+            operatingStatus: "NEEDS_VERIFICATION",
+            noiseLevel: "NEEDS_VERIFICATION",
+          },
+        };
+        db.places.push(place);
+      }
+    }
+
+    if (!place) {
+      return NextResponse.json(
+        { error: "선택하신 식당 정보를 찾을 수 없습니다." },
+        { status: 404 }
+      );
     }
 
     mtg.placeId = place.id;
     mtg.isPlaceTbd = false;
-    mtg.areaHint = place.areaSummary;
+    mtg.areaHint = place.name;
     mtg.sequenceVersion += 1;
     mtg.updatedAt = new Date().toISOString();
 
@@ -460,12 +565,13 @@ export async function PATCH(
 
     for (const rec of db.placeRecommendations) {
       if (rec.meetingId === mtg.id) {
-        rec.selectedByHost = rec.placeId === place.id;
+        rec.selectedByHost =
+          rec.placeId === place.id || rec.placeName === place.name;
       }
     }
 
     for (const calConn of db.calendarConnections) {
-      if (calConn.externalEventMappings[mtg.id]) {
+      if (calConn.externalEventMappings && calConn.externalEventMappings[mtg.id]) {
         calConn.externalEventMappings[mtg.id].sequenceVersion =
           mtg.sequenceVersion;
       }
@@ -475,10 +581,13 @@ export async function PATCH(
     await writeDatabase(db);
     return NextResponse.json({
       ok: true,
-      meeting: mtg,
+      meeting: {
+        ...mtg,
+        selectedPlace: place,
+      },
       selectedPlace: place,
       bookingStatusNotice:
-        "장소가 모임 상세 페이지에 반영되었습니다 (외부 예약 API가 연결되지 않았으므로 실제 식당 예약은 별도로 진행해야 하며 '예약 완료'로 표시하지 않습니다).",
+        "식당이 확정되었습니다. 필요 시 네이버 지도 링크를 통해 예약 여부를 확인해 주세요.",
     });
   }
 
