@@ -68,9 +68,11 @@ export default function AuthCallbackPage() {
                 setStatus("카카오 실계정 로그인 성공! 이동 중...");
               }
             } else {
+              const errBody = await exchangeRes.json().catch(() => ({}));
               // Supabase PKCE Fallback
               const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
               const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+              let supabaseSucceeded = false;
               if (supabaseUrl && anonKey) {
                 const tokenRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
                   method: "POST",
@@ -84,11 +86,30 @@ export default function AuthCallbackPage() {
                   const tokenData = await tokenRes.json();
                   accessToken = tokenData.access_token;
                   refreshToken = tokenData.refresh_token;
+                  supabaseSucceeded = true;
                 }
+              }
+
+              if (!supabaseSucceeded) {
+                setError({
+                  title: "카카오 로그인 세션 발급 실패",
+                  message:
+                    errBody?.details ||
+                    errBody?.message ||
+                    errBody?.error ||
+                    "카카오 토큰 교환 중 오류가 발생했습니다. 카카오 앱 설정을 확인해 주세요.",
+                  code: errBody?.error || "EXCHANGE_FAILED",
+                });
+                return;
               }
             }
           } catch (e: any) {
             console.error("Token exchange failed:", e);
+            setError({
+              title: "카카오 인증 통신 오류",
+              message: e?.message || "서버와 통신 중 오류가 발생했습니다.",
+            });
+            return;
           }
         }
 
@@ -100,15 +121,15 @@ export default function AuthCallbackPage() {
           }
         }
 
-        // 5. 백엔드 프로필 동기화
-        if (accessToken || authCode) {
+        // 5. 백엔드 프로필 동기화 (Supabase accessToken이 있을 때만 수행)
+        if (accessToken) {
           setStatus("사용자 프로필 및 초대 권한 동기화 중...");
           try {
             const syncRes = await fetch("/api/auth", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                Authorization: `Bearer ${accessToken}`,
               },
               body: JSON.stringify({
                 action: "SUPABASE_SESSION_SYNC",

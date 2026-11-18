@@ -117,6 +117,18 @@ export default function TeamyakUnifiedApp() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("reset") || url.searchParams.get("logout")) {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = window.location.pathname;
+        return;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     const savedToken =
       typeof window !== "undefined"
         ? localStorage.getItem("teamyak_session_token") ||
@@ -557,6 +569,24 @@ function MobileDeviceInstance({
   const [profileOrgInput, setProfileOrgInput] = useState<string>("");
   const [profileTitleInput, setProfileTitleInput] = useState<string>("");
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
+  const [hasProfile, setHasProfile] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return Boolean(localStorage.getItem("teamyak_custom_profile"));
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token =
+        localStorage.getItem("teamyak_session_token") ||
+        localStorage.getItem("teamyak_supabase_access_token") ||
+        "";
+      setSessionToken(token);
+      setIsLoggedIn(Boolean(token));
+      setHasProfile(Boolean(localStorage.getItem("teamyak_custom_profile")));
+    }
+  }, [syncPulse]);
 
   const [fragmentKey] = useState<string>(DEFAULT_FRAGMENT_KEY);
   const [latestInviteCode, setLatestInviteCode] = useState<string>("");
@@ -683,6 +713,7 @@ function MobileDeviceInstance({
           localStorage.setItem("teamyak_profile_onboarding_done", "true");
           localStorage.setItem("teamyak_custom_profile", JSON.stringify(profileObj));
         }
+        setHasProfile(true);
         const cur = accounts.find((a) => a.id === currentUserId);
         if (cur) {
           cur.displayName = profileNameInput.trim();
@@ -1599,10 +1630,6 @@ function MobileDeviceInstance({
       </div>
     );
   }
-
-  const hasProfile =
-    typeof window !== "undefined" &&
-    Boolean(localStorage.getItem("teamyak_custom_profile"));
 
   if (!hasProfile) {
     return (

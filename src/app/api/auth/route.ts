@@ -175,17 +175,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 실제 KAKAO_CLIENT_ID가 설정된 경우 kauth.kakao.com/oauth/token 교환 수행
-    if (
-      process.env.KAKAO_CLIENT_ID &&
+    // 실제 KAKAO_CLIENT_ID가 설정되었거나 기본 앱 키를 사용하여 kauth.kakao.com/oauth/token 교환 수행
+    const legacyClientId =
+      process.env.KAKAO_CLIENT_ID ||
+      process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
+      "b1ec0592928d85a41c49f7b984b0bdd1";
+    const legacyClientSecret =
       process.env.KAKAO_CLIENT_SECRET &&
-      code &&
-      !targetTestUserId
-    ) {
+      !process.env.KAKAO_CLIENT_SECRET.includes("여기에")
+        ? process.env.KAKAO_CLIENT_SECRET
+        : "vummuBElWJZMSRS8qVgrAtqKwxao8xqT";
+
+    if (code && !targetTestUserId) {
       const tokenParams = new URLSearchParams({
         grant_type: "authorization_code",
-        client_id: process.env.KAKAO_CLIENT_ID,
-        client_secret: process.env.KAKAO_CLIENT_SECRET,
+        client_id: legacyClientId,
+        client_secret: legacyClientSecret,
         redirect_uri:
           process.env.KAKAO_REDIRECT_URI || `${req.nextUrl.origin}/api/auth`,
         code,
@@ -253,7 +258,7 @@ export async function POST(req: NextRequest) {
       process.env.KAKAO_CLIENT_SECRET &&
       !process.env.KAKAO_CLIENT_SECRET.includes("여기에")
         ? process.env.KAKAO_CLIENT_SECRET
-        : undefined;
+        : "vummuBElWJZMSRS8qVgrAtqKwxao8xqT";
 
     if (!code) {
       return NextResponse.json({ error: "MISSING_KAKAO_CODE" }, { status: 400 });
