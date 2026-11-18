@@ -110,12 +110,7 @@ export default function TeamyakUnifiedApp() {
   const [globalVerifyLog, setGlobalVerifyLog] = useState<string[]>([]);
   const [isRunningTests, setIsRunningTests] = useState<boolean>(false);
   const [syncPulse, setSyncPulse] = useState<number>(0);
-  const [initialUserId, setInitialUserId] = useState<string>(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("teamyak_session_token")) {
-      return "";
-    }
-    return "u_kim";
-  });
+  const [initialUserId, setInitialUserId] = useState<string>("");
 
   const triggerGlobalSync = useCallback(() => {
     setSyncPulse((p) => p + 1);
@@ -128,6 +123,12 @@ export default function TeamyakUnifiedApp() {
           localStorage.getItem("teamyak_supabase_access_token")
         : null;
 
+    if (!savedToken) {
+      setAccounts([]);
+      setInitialUserId("");
+      return;
+    }
+
     const headers: Record<string, string> = {};
     if (savedToken) {
       headers["Authorization"] = `Bearer ${savedToken}`;
@@ -136,7 +137,7 @@ export default function TeamyakUnifiedApp() {
     fetch("/api/auth", { headers })
       .then((r) => r.json())
       .then((data) => {
-        let accList: AccountInfo[] = data.availableTestAccounts || [];
+        let accList: AccountInfo[] = [];
         const savedCustomProfile =
           typeof window !== "undefined"
             ? localStorage.getItem("teamyak_custom_profile")
@@ -160,7 +161,7 @@ export default function TeamyakUnifiedApp() {
             hasKeyBackup: true,
             recoveryEntropyBits: 140,
           };
-          accList = [kakaoAcc, ...accList.filter((a) => a.id !== data.user.id)];
+          accList = [kakaoAcc];
           setInitialUserId(data.user.id);
         } else if (savedToken) {
           const fallbackKakaoAcc: AccountInfo = {
@@ -174,7 +175,7 @@ export default function TeamyakUnifiedApp() {
             hasKeyBackup: true,
             recoveryEntropyBits: 140,
           };
-          accList = [fallbackKakaoAcc, ...accList];
+          accList = [fallbackKakaoAcc];
           setInitialUserId("u_kakao_client");
         }
         setAccounts(accList);
@@ -605,21 +606,10 @@ function MobileDeviceInstance({
   const [srConfirmedInput, setSrConfirmedInput] = useState<boolean>(false);
 
   useEffect(() => {
-    if (defaultUserId && defaultUserId !== currentUserId && accounts.some((a) => a.id === defaultUserId)) {
+    if (defaultUserId && defaultUserId !== currentUserId) {
       setCurrentUserId(defaultUserId);
-      const acc = accounts.find((a) => a.id === defaultUserId);
-      if (acc?.sessionToken) {
-        setSessionToken(acc.sessionToken);
-      }
     }
-  }, [defaultUserId, accounts, currentUserId]);
-
-  useEffect(() => {
-    const found = accounts.find((a) => a.id === currentUserId);
-    if (found && found.sessionToken && (!sessionToken || sessionToken !== found.sessionToken)) {
-      setSessionToken(found.sessionToken);
-    }
-  }, [accounts, currentUserId, sessionToken]);
+  }, [defaultUserId, currentUserId]);
 
   // Kakao JS SDK 초기화
   useEffect(() => {
@@ -1605,6 +1595,80 @@ function MobileDeviceInstance({
           <p className="text-[11px] text-slate-400">
             로그인 후 내 정보(이름, 소속)를 입력하고 약속을 시작하세요.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasProfile =
+    typeof window !== "undefined" &&
+    Boolean(localStorage.getItem("teamyak_custom_profile"));
+
+  if (!hasProfile) {
+    return (
+      <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col p-6 my-4 space-y-6">
+        <div className="text-center space-y-1">
+          <div className="w-14 h-14 rounded-2xl bg-[#FEE500]/30 text-amber-900 flex items-center justify-center text-3xl mx-auto mb-2 font-bold shadow-sm">
+            👋
+          </div>
+          <h2 className="text-xl font-black text-slate-900 tracking-tight">
+            환영합니다! 내 정보를 입력해 주세요
+          </h2>
+          <p className="text-xs text-slate-500 leading-relaxed max-w-[280px] mx-auto">
+            약속 초대장 생성 및 공유 시 상대방에게 표시될 프로필 정보입니다.
+          </p>
+        </div>
+
+        <div className="space-y-4 pt-2 text-left">
+          <div>
+            <label className="text-xs font-black text-slate-800 block mb-1.5">
+              이름 (성함) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={profileNameInput}
+              onChange={(e) => setProfileNameInput(e.target.value)}
+              placeholder="예: 홍길동"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-sm font-bold text-slate-900 bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-black text-slate-800 block mb-1.5">
+              소속 회사 / 언론사 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={profileOrgInput}
+              onChange={(e) => setProfileOrgInput(e.target.value)}
+              placeholder="예: 조선일보, 카카오, 삼성생명 등"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-sm font-bold text-slate-900 bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-black text-slate-800 block mb-1.5">
+              부서 및 직함 (직급)
+            </label>
+            <input
+              type="text"
+              value={profileTitleInput}
+              onChange={(e) => setProfileTitleInput(e.target.value)}
+              placeholder="예: 경제부 기자, 홍보팀 팀장, 과장 등"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-sm font-bold text-slate-900 bg-white"
+            />
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={handleSaveProfile}
+            disabled={isSavingProfile}
+            className="w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-base shadow-lg transition disabled:opacity-50 active:scale-95 cursor-pointer"
+          >
+            {isSavingProfile ? "저장 중..." : "입력 완료하고 팀약 시작하기 →"}
+          </button>
         </div>
       </div>
     );
