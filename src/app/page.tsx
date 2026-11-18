@@ -137,13 +137,24 @@ export default function TeamyakUnifiedApp() {
       .then((r) => r.json())
       .then((data) => {
         let accList: AccountInfo[] = data.availableTestAccounts || [];
+        const savedCustomProfile =
+          typeof window !== "undefined"
+            ? localStorage.getItem("teamyak_custom_profile")
+            : null;
+        let parsedProfile: { displayName?: string; jobTitle?: string; orgName?: string } | null = null;
+        if (savedCustomProfile) {
+          try {
+            parsedProfile = JSON.parse(savedCustomProfile);
+          } catch {}
+        }
+
         if (data.authenticated && data.user) {
           const kakaoAcc: AccountInfo = {
             id: data.user.id,
             accountType: "REAL_KAKAO_OAUTH",
-            displayName: data.user.displayName || "카카오 회원",
-            jobTitle: data.user.jobTitle || "팀약 회원",
-            teamId: data.user.teamId || null,
+            displayName: parsedProfile?.displayName || data.user.displayName || "카카오 회원",
+            jobTitle: parsedProfile?.jobTitle || data.user.jobTitle || "팀약 회원",
+            teamId: parsedProfile?.orgName || data.user.teamId || null,
             sessionToken: savedToken || "",
             deviceLabel: "카카오 인증 기기",
             hasKeyBackup: true,
@@ -151,6 +162,20 @@ export default function TeamyakUnifiedApp() {
           };
           accList = [kakaoAcc, ...accList.filter((a) => a.id !== data.user.id)];
           setInitialUserId(data.user.id);
+        } else if (savedToken) {
+          const fallbackKakaoAcc: AccountInfo = {
+            id: "u_kakao_client",
+            accountType: "REAL_KAKAO_OAUTH",
+            displayName: parsedProfile?.displayName || "카카오 회원",
+            jobTitle: parsedProfile?.jobTitle || "팀약 회원",
+            teamId: parsedProfile?.orgName || null,
+            sessionToken: savedToken,
+            deviceLabel: "카카오 인증 기기",
+            hasKeyBackup: true,
+            recoveryEntropyBits: 140,
+          };
+          accList = [fallbackKakaoAcc, ...accList];
+          setInitialUserId("u_kakao_client");
         }
         setAccounts(accList);
       })
@@ -617,13 +642,20 @@ function MobileDeviceInstance({
       });
 
       if (res.ok) {
+        const profileObj = {
+          displayName: profileNameInput.trim(),
+          jobTitle: fullTitle,
+          orgName: profileOrgInput.trim(),
+        };
+        if (typeof window !== "undefined") {
+          localStorage.setItem("teamyak_profile_onboarding_done", "true");
+          localStorage.setItem("teamyak_custom_profile", JSON.stringify(profileObj));
+        }
         const cur = accounts.find((a) => a.id === currentUserId);
         if (cur) {
           cur.displayName = profileNameInput.trim();
           cur.jobTitle = fullTitle;
-        }
-        if (typeof window !== "undefined") {
-          localStorage.setItem("teamyak_profile_onboarding_done", "true");
+          cur.teamId = profileOrgInput.trim() || cur.teamId;
         }
         showMsg("🎉 프로필이 성공적으로 저장되었습니다!");
         setShowProfileModal(false);
@@ -982,11 +1014,29 @@ function MobileDeviceInstance({
       if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
 
       const curAcc = accounts.find((a) => a.id === currentUserId);
-      const hostOrgBadge = curAcc?.teamId && curAcc.teamId !== "null"
-        ? (curAcc.teamId === "team_press_joongang" ? "중앙일보" : curAcc.teamId)
-        : (curAcc?.jobTitle && curAcc.jobTitle !== "팀약 회원"
-            ? `${curAcc.displayName} (${curAcc.jobTitle})`
-            : (curAcc?.displayName || "호스트"));
+      const savedCustomProfile =
+        typeof window !== "undefined"
+          ? localStorage.getItem("teamyak_custom_profile")
+          : null;
+      let parsedProfile: { displayName?: string; jobTitle?: string; orgName?: string } | null = null;
+      if (savedCustomProfile) {
+        try {
+          parsedProfile = JSON.parse(savedCustomProfile);
+        } catch {}
+      }
+
+      const rawName = parsedProfile?.displayName || curAcc?.displayName || "호스트";
+      const rawOrg = parsedProfile?.orgName || (curAcc?.teamId && curAcc.teamId !== "null" ? curAcc.teamId : "");
+      const rawJob = parsedProfile?.jobTitle || curAcc?.jobTitle || "";
+
+      let hostOrgBadge = rawName;
+      if (rawOrg && rawJob && !rawJob.includes(rawOrg)) {
+        hostOrgBadge = `${rawOrg} ${rawName} (${rawJob})`;
+      } else if (rawOrg) {
+        hostOrgBadge = `${rawOrg} ${rawName}`;
+      } else if (rawJob && rawJob !== "팀약 회원") {
+        hostOrgBadge = `${rawName} (${rawJob})`;
+      }
 
       const res = await fetch("/api/meetings", {
         method: "POST",
@@ -2592,18 +2642,28 @@ function MobileDeviceInstance({
               </div>
 
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-slate-800">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">이름</span>
-                  <span className="font-extrabold text-slate-900">
-                    {accounts.find((a) => a.id === currentUserId)?.displayName || "카카오 회원"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">소속 및 직함</span>
-                  <span className="font-bold text-slate-800">
-                    {accounts.find((a) => a.id === currentUserId)?.jobTitle || "팀약 회원"}
-                  </span>
-                </div>
+                {(() => {
+                  const cur = accounts.find((a) => a.id === currentUserId);
+                  const savedCustom = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
+                  let parsed: any = null;
+                  if (savedCustom) {
+                    try { parsed = JSON.parse(savedCustom); } catch {}
+                  }
+                  const dName = parsed?.displayName || cur?.displayName || "카카오 회원";
+                  const jTitle = parsed?.jobTitle || cur?.jobTitle || (parsed?.orgName ? `${parsed.orgName} 담당자` : "팀약 회원");
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">이름</span>
+                        <span className="font-extrabold text-slate-900">{dName}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">소속 및 직함</span>
+                        <span className="font-bold text-slate-800">{jTitle}</span>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">이메일</span>
                   <span className="text-slate-700 font-mono text-[10px]">
@@ -2616,10 +2676,18 @@ function MobileDeviceInstance({
                 <button
                   onClick={() => {
                     const cur = accounts.find((a) => a.id === currentUserId);
-                    setProfileNameInput(cur?.displayName || "");
-                    const parts = (cur?.jobTitle || "").split(" ");
-                    setProfileOrgInput(parts.length > 1 ? parts[0] : "");
-                    setProfileTitleInput(parts.length > 1 ? parts.slice(1).join(" ") : cur?.jobTitle || "");
+                    const savedCustom = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
+                    let parsed: any = null;
+                    if (savedCustom) {
+                      try { parsed = JSON.parse(savedCustom); } catch {}
+                    }
+                    setProfileNameInput(parsed?.displayName || cur?.displayName || "");
+                    setProfileOrgInput(parsed?.orgName || (cur?.teamId && cur.teamId !== "null" ? cur.teamId : ""));
+                    setProfileTitleInput(
+                      parsed?.jobTitle
+                        ? parsed.jobTitle.replace(parsed.orgName || "", "").trim()
+                        : cur?.jobTitle || ""
+                    );
                     setShowProfileModal(true);
                   }}
                   className="flex-1 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"

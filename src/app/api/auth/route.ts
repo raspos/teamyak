@@ -546,11 +546,7 @@ export async function POST(req: NextRequest) {
       currentUser.jobTitle = jobTitle.trim();
     }
     if (orgName && typeof orgName === "string" && orgName.trim()) {
-      if (orgName.includes("중앙일보") || orgName.includes("기자") || orgName.includes("언론")) {
-        currentUser.teamId = "team_press_joongang";
-      } else {
-        currentUser.teamId = "team_pr_corp";
-      }
+      currentUser.teamId = orgName.trim();
     }
 
     await writeDatabase(db);
