@@ -777,11 +777,16 @@ function MobileDeviceInstance({
       if (mRes.ok) {
         const mJson = await mRes.json();
         let list = mJson.directMeetings || [];
-        if (currentUserId.startsWith("u_kakao_")) {
-          // 카카오 실계정 사용자에게는 테스트용 샘플 모임(mtg_1: 김민준 대리)을 목록에서 제외
-          list = list.filter((m: any) => m.id !== "mtg_1" || m.createdBy === currentUserId);
+        if (currentUserId.startsWith("u_kakao_") || isLoggedIn) {
+          // 카카오 실계정 사용자에게는 테스트용 샘플 모임(mtg_1: 김민준 대리)만 목록에서 제외
+          list = list.filter((m: any) => m.id !== "mtg_1");
         }
-        setDirectMeetings(list);
+        setDirectMeetings((prev) => {
+          const map = new Map<string, any>();
+          for (const m of prev) map.set(m.id, m);
+          for (const m of list) map.set(m.id, { ...map.get(m.id), ...m });
+          return Array.from(map.values()).filter((m: any) => m.id !== "mtg_1");
+        });
         if (mJson.placesCatalog) setPlacesCatalog(mJson.placesCatalog);
 
         const decMap: Record<string, SensitiveMeetingPayload> = {};
@@ -1180,45 +1185,28 @@ function MobileDeviceInstance({
     }
     const inviteUrl = `${window.location.origin}/i/${targetCode}#k=${targetKey}`;
     const mtgTitle = (targetMtg && decryptedMeetingsMap[targetMtg.id]?.title) || targetMtg?.title || "팀약 약속 초대장";
+    const shareText = `[TEAMYAK 약속 초대장]\n\n📌 ${mtgTitle}\n🗓️ 일시: ${
+      targetMtg?.confirmedDate || "약속 일시"
+    } 오후 ${targetMtg?.startTime || "12:00"}\n📍 장소: ${
+      targetMtg?.areaHint || "장소 미정"
+    }\n\n아래 링크를 눌러 참석 여부를 확인해 주세요:\n${inviteUrl}`;
 
-    if (typeof window !== "undefined" && (window as any).Kakao) {
-      const kakaoKey =
-        process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID ||
-        "b1ec0592928d85a41c49f7b984b0bdd1";
+    // 1. 모바일 표준 공유 시트 (카카오톡, 메시지 앱 즉시 팝업 - 빈 화면/SDK 에러 100% 방지)
+    if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        if (!(window as any).Kakao.isInitialized()) {
-          (window as any).Kakao.init(kakaoKey);
-        }
-        if ((window as any).Kakao.isInitialized()) {
-          (window as any).Kakao.Share.sendDefault({
-            objectType: "text",
-            text: `[TEAMYAK 약속 초대장]\n\n📌 ${mtgTitle}\n🗓️ 일시: ${
-              targetMtg?.confirmedDate || "약속 일시"
-            } 오후 ${targetMtg?.startTime || "12:00"}\n📍 장소: ${
-              targetMtg?.areaHint || "장소 미정"
-            }\n\n아래 버튼을 눌러 참석 여부를 확인해 주세요.`,
-            link: {
-              mobileWebUrl: inviteUrl,
-              webUrl: inviteUrl,
-            },
-            buttons: [
-              {
-                title: "초대장 확인 및 참석 응답",
-                link: {
-                  mobileWebUrl: inviteUrl,
-                  webUrl: inviteUrl,
-                },
-              },
-            ],
-          });
-          showMsg("💬 카카오톡 공유 창이 열렸습니다. 대화 상대를 선택해 초대장을 전송하세요!");
-          return;
-        }
+        await navigator.share({
+          title: `[TEAMYAK] ${mtgTitle}`,
+          text: shareText,
+          url: inviteUrl,
+        });
+        showMsg("💬 카카오톡 또는 원하는 대화방을 선택해 초대장을 전송하세요!");
+        return;
       } catch (err: any) {
-        console.warn("Kakao share SDK fallback:", err);
+        if (err?.name === "AbortError") return;
       }
     }
 
+    // 2. 클립보드 복사 (모바일/PC 공통 안정 동작)
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(inviteUrl);
       showMsg(
@@ -2086,7 +2074,7 @@ function MobileDeviceInstance({
             )}
 
             {/* 서브뷰 3: 생성 직후 카카오톡 초대 (INVITE_SHARE) */}
-            {meetingSubView === "INVITE_SHARE" && currentMtg && (
+            {meetingSubView === "INVITE_SHARE" && (
               <div className="space-y-4">
                 <button
                   onClick={() => setMeetingSubView("LIST")}
@@ -2101,9 +2089,11 @@ function MobileDeviceInstance({
                     <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-black">
                       ✓ 약속 등록 완료
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      ID: {currentMtg.id}
-                    </span>
+                    {currentMtg?.id && (
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        ID: {currentMtg.id}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -2118,42 +2108,52 @@ function MobileDeviceInstance({
                   {/* 약속 요약 카드 */}
                   <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs text-slate-800">
                     <div className="text-[10px] font-bold text-brand-600">
-                      {currentMtg.hostOrgBadge || "호스트"} 주최
+                      {currentMtg?.hostOrgBadge || "호스트"} 주최
                     </div>
                     <h3 className="text-base font-extrabold text-slate-900">
-                      {currentDec?.title || currentMtg.title || "비즈니스 오찬"}
+                      {currentDec?.title || currentMtg?.title || newTitle || "비즈니스 약속"}
                     </h3>
 
                     <div className="flex flex-wrap items-center gap-1.5 font-bold text-slate-700">
-                      <span>🗓️ {currentMtg.confirmedDate} 오후 {currentMtg.startTime || "12:00"}</span>
+                      <span>🗓️ {currentMtg?.confirmedDate || "약속 날짜"} {currentMtg?.startTime ? `오후 ${currentMtg.startTime}` : ""}</span>
                       <span>·</span>
-                      <span className={currentMtg.isPlaceTbd ? "text-amber-600" : "text-emerald-700"}>
-                        📍 {currentMtg.areaHint || "장소 미정"} {currentMtg.isPlaceTbd ? "(장소 미정)" : ""}
+                      <span className={currentMtg?.isPlaceTbd ? "text-amber-600" : "text-emerald-700"}>
+                        📍 {currentMtg?.areaHint || "장소 협의 중"} {currentMtg?.isPlaceTbd ? "(장소 미정)" : ""}
                       </span>
                     </div>
 
                     <div className="pt-2 border-t border-slate-200 space-y-1 text-[11px] text-slate-600">
-                      <div>• 초대 대상: <strong>{currentMtg.guestSideLabel || "초대받은 분"}</strong></div>
-                      {currentDec?.highestSeniorityLevel && currentDec.highestSeniorityLevel !== "STAFF" && (
-                        <div className="text-purple-900 font-bold">
-                          • 🔐 주요 참석자: {currentDec.highestSeniorityLevel} 참석 (로그인 및 초대 권한 확인 후 안전 공개)
-                        </div>
-                      )}
+                      <div>• 초대 대상: <strong>{currentMtg?.guestSideLabel || "초대받은 분"}</strong></div>
+                    </div>
+                  </div>
+
+                  {/* 생성된 초대 링크 박스 (직접 확인 및 즉시 복사 가능) */}
+                  <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-left space-y-2">
+                    <div className="text-[11px] font-black text-amber-900 flex items-center justify-between">
+                      <span>🔗 생성된 약속 초대 링크</span>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-amber-200/80 text-amber-900 font-mono font-bold">#k= 종단간 암호화</span>
+                    </div>
+                    <div className="p-2.5 bg-white rounded-xl border border-amber-300 text-[11px] font-mono break-all text-slate-800 select-all shadow-inner">
+                      {typeof window !== "undefined"
+                        ? `${window.location.origin}/i/${currentMtg?.inviteCode || latestInviteCode || inviteCode}#k=${currentMtg?.seedFragmentKeyForTest || latestInviteKey || fragmentKey}`
+                        : "링크 생성 완료"}
                     </div>
                   </div>
 
                   {/* 가장 눈에 띄는 카카오톡 초대 버튼 */}
                   <button
-                    onClick={() => handleKakaoShare(currentMtg.id)}
-                    className="w-full py-4 rounded-2xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition"
+                    type="button"
+                    onClick={() => handleKakaoShare(currentMtg?.id)}
+                    className="w-full py-4 rounded-2xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
                   >
                     <span className="text-lg">💬</span>
                     <span>카카오톡으로 초대하기</span>
                   </button>
 
                   <button
-                    onClick={() => handleCopyInviteLink(currentMtg.id)}
-                    className="w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs border border-slate-300 flex items-center justify-center gap-1.5 active:scale-95 transition"
+                    type="button"
+                    onClick={() => handleCopyInviteLink(currentMtg?.id)}
+                    className="w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs border border-slate-300 flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer"
                   >
                     <span>📋</span>
                     <span>초대 링크 복사</span>
@@ -2161,6 +2161,7 @@ function MobileDeviceInstance({
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
                     <button
+                      type="button"
                       onClick={() => setMeetingSubView("DETAIL")}
                       className="font-extrabold text-brand-600 hover:text-brand-700 flex items-center gap-1"
                     >
@@ -2168,6 +2169,7 @@ function MobileDeviceInstance({
                       <span>→</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => setMeetingSubView("LIST")}
                       className="text-slate-500 hover:text-slate-800 font-medium"
                     >
