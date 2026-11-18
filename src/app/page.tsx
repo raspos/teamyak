@@ -1028,17 +1028,15 @@ function MobileDeviceInstance({
         }
         if ((window as any).Kakao.isInitialized()) {
           (window as any).Kakao.Share.sendDefault({
-            objectType: "feed",
-            content: {
-              title: `[TEAMYAK] ${mtgTitle}`,
-              description: `${targetMtg?.confirmedDate || "약속 일시"} 오후 ${
-                targetMtg?.startTime || "12:00"
-              } · ${targetMtg?.areaHint || "장소 미정"}`,
-              imageUrl: "https://teamyak.kr/teamyak-og-card.png",
-              link: {
-                mobileWebUrl: inviteUrl,
-                webUrl: inviteUrl,
-              },
+            objectType: "text",
+            text: `[TEAMYAK 약속 초대장]\n\n📌 ${mtgTitle}\n🗓️ 일시: ${
+              targetMtg?.confirmedDate || "약속 일시"
+            } 오후 ${targetMtg?.startTime || "12:00"}\n📍 장소: ${
+              targetMtg?.areaHint || "장소 미정"
+            }\n\n아래 버튼을 눌러 참석 여부를 확인해 주세요.`,
+            link: {
+              mobileWebUrl: inviteUrl,
+              webUrl: inviteUrl,
             },
             buttons: [
               {
@@ -1053,7 +1051,7 @@ function MobileDeviceInstance({
           showMsg("💬 카카오톡 공유 창이 열렸습니다. 대화 상대를 선택해 초대장을 전송하세요!");
           return;
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn("Kakao share SDK fallback:", err);
       }
     }
