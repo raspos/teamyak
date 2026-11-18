@@ -110,16 +110,44 @@ export default function TeamyakUnifiedApp() {
   const [globalVerifyLog, setGlobalVerifyLog] = useState<string[]>([]);
   const [isRunningTests, setIsRunningTests] = useState<boolean>(false);
   const [syncPulse, setSyncPulse] = useState<number>(0);
+  const [initialUserId, setInitialUserId] = useState<string>("u_kim");
 
   const triggerGlobalSync = useCallback(() => {
     setSyncPulse((p) => p + 1);
   }, []);
 
   useEffect(() => {
-    fetch("/api/auth")
+    const savedToken =
+      typeof window !== "undefined"
+        ? localStorage.getItem("teamyak_session_token") ||
+          localStorage.getItem("teamyak_supabase_access_token")
+        : null;
+
+    const headers: Record<string, string> = {};
+    if (savedToken) {
+      headers["Authorization"] = `Bearer ${savedToken}`;
+    }
+
+    fetch("/api/auth", { headers })
       .then((r) => r.json())
       .then((data) => {
-        if (data.availableTestAccounts) setAccounts(data.availableTestAccounts);
+        let accList: AccountInfo[] = data.availableTestAccounts || [];
+        if (data.authenticated && data.user) {
+          const kakaoAcc: AccountInfo = {
+            id: data.user.id,
+            accountType: "REAL_KAKAO_OAUTH",
+            displayName: data.user.displayName || "카카오 회원",
+            jobTitle: data.user.jobTitle || "팀약 회원",
+            teamId: data.user.teamId || null,
+            sessionToken: savedToken || "",
+            deviceLabel: "카카오 인증 기기",
+            hasKeyBackup: true,
+            recoveryEntropyBits: 140,
+          };
+          accList = [kakaoAcc, ...accList.filter((a) => a.id !== data.user.id)];
+          setInitialUserId(data.user.id);
+        }
+        setAccounts(accList);
       })
       .catch(() => {});
   }, [syncPulse]);
@@ -313,7 +341,7 @@ export default function TeamyakUnifiedApp() {
       <main className="flex-1 w-full max-w-md mx-auto py-2 px-2 flex flex-col items-center justify-start">
         <MobileDeviceInstance
           deviceTitle="팀약 모바일"
-          defaultUserId="u_kim"
+          defaultUserId={initialUserId}
           defaultTab="meetings"
           viewportWidth={viewportWidth}
           darkMode={darkMode}
@@ -493,8 +521,18 @@ function MobileDeviceInstance({
   const [srConfirmedInput, setSrConfirmedInput] = useState<boolean>(false);
 
   useEffect(() => {
+    if (defaultUserId && defaultUserId !== currentUserId && accounts.some((a) => a.id === defaultUserId)) {
+      setCurrentUserId(defaultUserId);
+      const acc = accounts.find((a) => a.id === defaultUserId);
+      if (acc?.sessionToken) {
+        setSessionToken(acc.sessionToken);
+      }
+    }
+  }, [defaultUserId, accounts, currentUserId]);
+
+  useEffect(() => {
     const found = accounts.find((a) => a.id === currentUserId);
-    if (found && found.sessionToken && !sessionToken) {
+    if (found && found.sessionToken && (!sessionToken || sessionToken !== found.sessionToken)) {
       setSessionToken(found.sessionToken);
     }
   }, [accounts, currentUserId, sessionToken]);
