@@ -14,6 +14,7 @@ export default function AuthCallbackPage() {
   const [error, setError] = useState<{ title: string; message: string; code?: string } | null>(null);
   const [keyRecoveryFailed, setKeyRecoveryFailed] = useState<boolean>(false);
   const [targetInviteCode, setTargetInviteCode] = useState<string | null>(null);
+  const [redirectTarget, setRedirectTarget] = useState<string>("/");
 
   useEffect(() => {
     async function processCallback() {
@@ -180,8 +181,9 @@ export default function AuthCallbackPage() {
           setStatus("로그인 완료! 메인 화면으로 이동합니다.");
         }
 
+        setRedirectTarget(targetUrl);
         setTimeout(() => {
-          window.location.replace(targetUrl);
+          window.location.href = targetUrl;
         }, 300);
       } catch (err: any) {
         setError({
@@ -262,14 +264,22 @@ export default function AuthCallbackPage() {
 
         {/* 3. 정상 처리 진행 중 */}
         {!error && !keyRecoveryFailed && (
-          <div className="space-y-2">
+          <div className="space-y-4">
             <div className="flex items-center justify-center space-x-2 text-xs text-slate-600 font-medium">
               <span className="w-3 h-3 rounded-full border-2 border-brand-600 border-t-transparent animate-spin inline-block" />
               <span>{status}</span>
             </div>
             <p className="text-[11px] text-slate-400">
-              보안을 위해 암호화 키(#k=)와 세션 상태를 복원하고 있습니다.
+              세션 및 암호화 키를 안전하게 연결하고 있습니다.
             </p>
+            <div className="pt-2">
+              <a
+                href={redirectTarget}
+                className="inline-block w-full py-3 bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black rounded-xl text-xs shadow-sm transition cursor-pointer"
+              >
+                화면이 멈춘 경우 여기를 터치하세요 →
+              </a>
+            </div>
           </div>
         )}
       </div>
