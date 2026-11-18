@@ -467,8 +467,12 @@ export interface Phase3DatabaseSchema {
   }>;
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_DIR = process.env.VERCEL
+  ? path.join("/tmp", ".data")
+  : path.join(process.cwd(), ".data");
 const DB_FILE_PATH = path.join(DATA_DIR, "teamyak-phase3-db.json");
+
+let memoryDbInstance: Phase3DatabaseSchema | null = null;
 
 export const DEFAULT_SEED_FRAGMENT_KEY = "7f9a2b4c8e1d0a3f9911223344556677";
 export const SEED_RECOVERY_CODE_KIM = "TYRK-8F92-K4M7-P2Q9-X5W3-N6B8-J3V4-M9Q2";
@@ -1342,38 +1346,61 @@ export async function readDatabase(): Promise<Phase3DatabaseSchema> {
   // [Phase 3.7 운영 환경 엄격 가드] 운영 환경에서 클라우드 DB 부재 시 로컬 폴백 금지 및 즉시 중단!
   assertProductionDatabaseReadiness();
 
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (memoryDbInstance) {
+    return memoryDbInstance;
   }
-  if (!fs.existsSync(DB_FILE_PATH)) {
-    const seed = await createInitialSeedDatabase();
-    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
-    return seed;
-  }
+
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      } catch (e) {
+        // read-only fs on serverless
+      }
+    }
+    if (!fs.existsSync(DB_FILE_PATH)) {
+      const seed = await createInitialSeedDatabase();
+      try {
+        fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
+      } catch (e) {}
+      memoryDbInstance = seed;
+      return seed;
+    }
     const raw = fs.readFileSync(DB_FILE_PATH, "utf-8");
     const parsed = JSON.parse(raw) as Phase3DatabaseSchema;
     if (parsed.version !== 37) {
       const seed = await createInitialSeedDatabase();
-      fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
+      try {
+        fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
+      } catch (e) {}
+      memoryDbInstance = seed;
       return seed;
     }
     sanitizeLegacyPlaintextFields(parsed);
+    memoryDbInstance = parsed;
     return parsed;
   } catch {
     const seed = await createInitialSeedDatabase();
-    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
+    memoryDbInstance = seed;
+    try {
+      fs.writeFileSync(DB_FILE_PATH, JSON.stringify(seed, null, 2), "utf-8");
+    } catch (e) {}
     return seed;
   }
 }
 
 export async function writeDatabase(db: Phase3DatabaseSchema): Promise<void> {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  memoryDbInstance = db;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    sanitizeLegacyPlaintextFields(db);
+    db.lastUpdatedAt = new Date().toISOString();
+    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(db, null, 2), "utf-8");
+  } catch (err) {
+    // Vercel serverless read-only filesystem: in-memory persistence is preserved
   }
-  sanitizeLegacyPlaintextFields(db);
-  db.lastUpdatedAt = new Date().toISOString();
-  fs.writeFileSync(DB_FILE_PATH, JSON.stringify(db, null, 2), "utf-8");
 }
 
 export function resolveUserFromRequest(
