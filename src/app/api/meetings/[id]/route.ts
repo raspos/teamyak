@@ -777,5 +777,103 @@ export async function PATCH(
     });
   }
 
+  if (action === "DELETE_MEETING") {
+    const meetingId = params.id;
+    const sideIds = db.meetingSides
+      .filter((ms) => ms.meetingId === meetingId)
+      .map((ms) => ms.id);
+
+    db.meetings = db.meetings.filter((m) => m.id !== meetingId);
+    db.meetingSides = db.meetingSides.filter((ms) => ms.meetingId !== meetingId);
+    db.meetingVisibilities = db.meetingVisibilities.filter(
+      (mv) => !sideIds.includes(mv.meetingSideId)
+    );
+    db.teamSharedSchedules = db.teamSharedSchedules.filter(
+      (ts) => ts.meetingId !== meetingId
+    );
+    db.meetingParticipants = db.meetingParticipants.filter(
+      (mp) => mp.meetingId !== meetingId
+    );
+    db.meetingInvitations = db.meetingInvitations.filter(
+      (mi) => mi.meetingId !== meetingId
+    );
+    db.meetingPreferences = db.meetingPreferences.filter(
+      (mp) => mp.meetingId !== meetingId
+    );
+    db.placeRecommendations = db.placeRecommendations.filter(
+      (pr) => pr.meetingId !== meetingId
+    );
+    db.meetingScheduleChanges = db.meetingScheduleChanges.filter(
+      (sc) => sc.meetingId !== meetingId
+    );
+
+    for (const calConn of db.calendarConnections) {
+      if (calConn.externalEventMappings && calConn.externalEventMappings[meetingId]) {
+        delete calConn.externalEventMappings[meetingId];
+      }
+    }
+
+    await writeDatabase(db);
+    return NextResponse.json({ ok: true, deletedMeetingId: meetingId });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const db = await readDatabase();
+  const authHeader = req.headers.get("authorization");
+  const cookieToken =
+    req.cookies.get("teamyak_session")?.value ||
+    req.cookies.get("teamyak_uid")?.value;
+  const currentUser = resolveUserFromRequest(db, authHeader, cookieToken);
+
+  const mtg = db.meetings.find((m) => m.id === params.id);
+  if (!mtg) {
+    return NextResponse.json({
+      ok: true,
+      message: "이미 삭제되었거나 존재하지 않는 약속입니다.",
+    });
+  }
+
+  const meetingId = params.id;
+  const sideIds = db.meetingSides
+    .filter((ms) => ms.meetingId === meetingId)
+    .map((ms) => ms.id);
+
+  db.meetings = db.meetings.filter((m) => m.id !== meetingId);
+  db.meetingSides = db.meetingSides.filter((ms) => ms.meetingId !== meetingId);
+  db.meetingVisibilities = db.meetingVisibilities.filter(
+    (mv) => !sideIds.includes(mv.meetingSideId)
+  );
+  db.teamSharedSchedules = db.teamSharedSchedules.filter(
+    (ts) => ts.meetingId !== meetingId
+  );
+  db.meetingParticipants = db.meetingParticipants.filter(
+    (mp) => mp.meetingId !== meetingId
+  );
+  db.meetingInvitations = db.meetingInvitations.filter(
+    (mi) => mi.meetingId !== meetingId
+  );
+  db.meetingPreferences = db.meetingPreferences.filter(
+    (mp) => mp.meetingId !== meetingId
+  );
+  db.placeRecommendations = db.placeRecommendations.filter(
+    (pr) => pr.meetingId !== meetingId
+  );
+  db.meetingScheduleChanges = db.meetingScheduleChanges.filter(
+    (sc) => sc.meetingId !== meetingId
+  );
+
+  for (const calConn of db.calendarConnections) {
+    if (calConn.externalEventMappings && calConn.externalEventMappings[meetingId]) {
+      delete calConn.externalEventMappings[meetingId];
+    }
+  }
+
+  await writeDatabase(db);
+  return NextResponse.json({ ok: true, deletedMeetingId: meetingId });
 }

@@ -1238,6 +1238,56 @@ function MobileDeviceInstance({
     }
   }
 
+  async function handleDeleteMeeting(meetingId?: string) {
+    const targetMtg =
+      (meetingId ? directMeetings.find((m) => m.id === meetingId) : null) ||
+      (selectedMeetingId ? directMeetings.find((m) => m.id === selectedMeetingId) : null) ||
+      currentMtg ||
+      (directMeetings.length > 0 ? directMeetings[0] : null);
+
+    const targetId = meetingId || targetMtg?.id;
+    if (!targetId) {
+      showMsg("⚠️ 삭제할 약속을 찾을 수 없습니다.");
+      return;
+    }
+
+    const mtgTitle = (targetId && decryptedMeetingsMap[targetId]?.title) || targetMtg?.title || "이 약속";
+    const isConfirmed = window.confirm(
+      `[약속 바로 버리기]\n'${mtgTitle}' 약속을 완전히 삭제하시겠습니까?\n\n삭제 시 목록에서 즉시 제거되며 초대 링크도 무효화됩니다.`
+    );
+    if (!isConfirmed) return;
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
+
+      fetch(`/api/meetings/${targetId}`, {
+        method: "DELETE",
+        headers,
+      }).catch(() => {});
+
+      // 클라이언트 로컬 상태 즉각 정리 (낙관적 UI)
+      setDirectMeetings((prev) => prev.filter((m) => m.id !== targetId));
+      setDecryptedMeetingsMap((prev) => {
+        const next = { ...prev };
+        delete next[targetId];
+        return next;
+      });
+
+      setSelectedMeetingId(null);
+      setMeetingSubView("LIST");
+
+      showMsg("🗑️ 약속이 즉시 삭제(폐기)되었습니다.");
+      fetchAllDeviceState();
+      onStateMutated();
+    } catch {
+      setDirectMeetings((prev) => prev.filter((m) => m.id !== targetId));
+      setSelectedMeetingId(null);
+      setMeetingSubView("LIST");
+      showMsg("🗑️ 약속이 즉시 삭제(폐기)되었습니다.");
+    }
+  }
+
   async function handleGoogleCalendarSync(meetingId: string) {
     const res = await fetch("/api/calendar/google", {
       method: "POST",
@@ -1557,26 +1607,39 @@ function MobileDeviceInstance({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 pt-0.5">
+        <div className="flex items-center gap-2 pt-0.5">
           <button
+            type="button"
             onClick={() => {
               setSelectedMeetingId(m.id);
               setMeetingSubView("INVITE_SHARE");
             }}
-            className="py-2.5 px-3 rounded-xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#191919] font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer"
           >
             <span>💬</span>
             <span>초대하기</span>
           </button>
           <button
+            type="button"
             onClick={() => {
               setSelectedMeetingId(m.id);
               setMeetingSubView("DETAIL");
             }}
-            className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer"
           >
             <span>상세 보기</span>
             <span>→</span>
+          </button>
+          <button
+            type="button"
+            title="약속 바로 버리기 (삭제)"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteMeeting(m.id);
+            }}
+            className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition flex items-center justify-center active:scale-95 cursor-pointer"
+          >
+            <span>🗑️</span>
           </button>
         </div>
       </div>
@@ -2159,6 +2222,16 @@ function MobileDeviceInstance({
                     <span>초대 링크 복사</span>
                   </button>
 
+                  {/* 바로 버리기 (즉시 삭제) 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMeeting(currentMtg?.id || selectedMeetingId || undefined)}
+                    className="w-full py-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs border border-rose-200 flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm"
+                  >
+                    <span>🗑️</span>
+                    <span>이 약속 바로 버리기 (초장에 삭제)</span>
+                  </button>
+
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
                     <button
                       type="button"
@@ -2581,6 +2654,18 @@ function MobileDeviceInstance({
                     ))}
                   </div>
                 )}
+
+                {/* 약속 영구 삭제 (버리기) 버튼 */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMeeting(currentMtg.id)}
+                    className="w-full py-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs border border-rose-200 flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm"
+                  >
+                    <span>🗑️</span>
+                    <span>이 약속 영구 삭제 (버리기)</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
