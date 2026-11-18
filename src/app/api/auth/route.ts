@@ -529,6 +529,38 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
+  // 2-1. 사용자 프로필 업데이트 (최초 로그인 온보딩 및 내 정보 수정)
+  if (action === "UPDATE_PROFILE") {
+    const authHeader = req.headers.get("authorization");
+    const cookieToken = req.cookies.get("teamyak_session")?.value;
+    const currentUser = resolveUserFromRequest(db, authHeader, cookieToken);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { displayName, jobTitle, orgName } = body;
+    if (displayName && typeof displayName === "string" && displayName.trim()) {
+      currentUser.displayName = displayName.trim();
+    }
+    if (jobTitle && typeof jobTitle === "string" && jobTitle.trim()) {
+      currentUser.jobTitle = jobTitle.trim();
+    }
+    if (orgName && typeof orgName === "string" && orgName.trim()) {
+      if (orgName.includes("중앙일보") || orgName.includes("기자") || orgName.includes("언론")) {
+        currentUser.teamId = "team_press_joongang";
+      } else {
+        currentUser.teamId = "team_pr_corp";
+      }
+    }
+
+    await writeDatabase(db);
+    return NextResponse.json({
+      ok: true,
+      user: currentUser,
+      message: "프로필이 성공적으로 저장되었습니다."
+    });
+  }
+
   // 3. 모바일 기기 변경 대비 마스터키 복구 봉투 저장 (6자리 PIN 등 저엔트로피 비밀값 서버에서도 거부!)
   if (action === "SAVE_KEY_BACKUP") {
     const authHeader = req.headers.get("authorization");
