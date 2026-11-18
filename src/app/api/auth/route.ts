@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
   );
 
   return NextResponse.json({
+    version: "2026-11-18-kakao-v2",
     authenticated: Boolean(currentUser),
     user: currentUser,
     storageEngine: db.storageEngine,
@@ -275,7 +276,7 @@ export async function POST(req: NextRequest) {
         tokenParams.append("client_secret", clientSecret);
       }
 
-      const tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
+      let tokenRes = await fetch("https://kauth.kakao.com/oauth/token", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -284,11 +285,43 @@ export async function POST(req: NextRequest) {
       });
 
       if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        return NextResponse.json(
-          { error: "KAKAO_TOKEN_EXCHANGE_FAILED", details: errText },
-          { status: 502 }
-        );
+        const firstErr = await tokenRes.text();
+        // KOE010(클라이언트 인증 실패) 발생 시 client_secret 유무를 전환하여 즉시 자동 재시도
+        if (firstErr.includes("KOE010")) {
+          const retryParams = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: clientId,
+            redirect_uri: redirectUri || `${req.nextUrl.origin}/auth/callback`,
+            code,
+          });
+          if (!tokenParams.has("client_secret")) {
+            retryParams.append("client_secret", "vummuBElWJZMSRS8qVgrAtqKwxao8xqT");
+          }
+          const retryRes = await fetch("https://kauth.kakao.com/oauth/token", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+            },
+            body: retryParams.toString(),
+          });
+          if (retryRes.ok) {
+            tokenRes = retryRes;
+          } else {
+            return NextResponse.json(
+              {
+                error: "KAKAO_TOKEN_EXCHANGE_FAILED",
+                details: await retryRes.text(),
+                firstAttempt: firstErr,
+              },
+              { status: 502 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { error: "KAKAO_TOKEN_EXCHANGE_FAILED", details: firstErr },
+            { status: 502 }
+          );
+        }
       }
 
       const tokenData = await tokenRes.json();
