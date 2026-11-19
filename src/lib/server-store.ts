@@ -321,6 +321,9 @@ export interface DbPlaceRecommendation {
   placeVerificationStatus: PlaceVerificationStatus;
   selectedByHost: boolean;
   createdAt: string;
+  aiMatchScore?: number;
+  aiBriefing?: string;
+  aiTags?: string[];
 }
 
 export interface DbMeetingScheduleChange {

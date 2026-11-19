@@ -9,6 +9,7 @@ import {
   SeniorityLevel,
   ScheduleChangeType,
 } from "@/lib/server-store";
+import { generateDynamicAiPlaces } from "@/lib/ai-place-service";
 
 export async function GET(
   req: NextRequest,
@@ -391,7 +392,7 @@ export async function PATCH(
 
   // ==========================================================================
   // 5. AI 맞춤 식당·모임 장소 추천 실행 (RECOMMEND_PLACES)
-  // - 서버는 개인 방문 장소 이력을 읽지 않으며 브라우저에서 복호화 후 로컬 제외 필터링 수행
+  // - Google Gemini 1.5 Flash 실시간 생성 및 TEAMYAK AI 의전 지식 엔진 연동
   // ==========================================================================
   if (action === "RECOMMEND_PLACES") {
     const gate = canUserAccessEncryptedMeetingPayload(
@@ -403,31 +404,88 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const result = generateAiPlaceRecommendations(db, {
+    const participantSelfPrefs = db.meetingPreferences.filter(
+      (p) => p.meetingId === mtg.id && p.inputSource === "PARTICIPANT_SELF"
+    );
+    const combinedDisliked = Array.from(
+      new Set(participantSelfPrefs.flatMap((p) => p.dislikedItems))
+    );
+    const combinedCuisines = Array.from(
+      new Set([
+        ...(body.preferredCuisines || ["한식"]),
+        ...participantSelfPrefs.flatMap((p) => p.preferredCuisines),
+      ])
+    );
+    const combinedSpaces = Array.from(
+      new Set([
+        ...(body.spacePreferences || ["조용한 곳", "개별 룸"]),
+        ...participantSelfPrefs.flatMap((p) => p.spacePreferences),
+      ])
+    );
+
+    const seniorLevel =
+      body.seniorLevel || (mtg.hasSeniorAttendee ? "EXEC" : "STAFF");
+
+    const aiResult = await generateDynamicAiPlaces({
       meetingId: mtg.id,
-      area: body.area || mtg.areaHint || "여의도",
+      meetingTitle: body.meetingTitle || (mtg as any).title || "비즈니스 미팅",
+      meetingPurpose: body.meetingPurpose || "업무 오찬",
+      area: body.area || mtg.areaHint || "명동",
       headcount: Number(
         body.headcount ||
           db.meetingParticipants.filter(
             (p) => p.meetingId === mtg.id && p.rsvpStatus === "ATTENDING"
           ).length ||
-          5
+          2
       ),
-      meetingPurpose: body.meetingPurpose || "업무 오찬",
-      preferredCuisines: body.preferredCuisines || ["한식"],
-      spacePreferences: body.spacePreferences || ["조용한 곳", "개별 룸"],
+      seniorLevel,
+      seniorName: body.seniorName,
+      dislikedItems: combinedDisliked,
+      preferredCuisines: combinedCuisines,
+      spacePreferences: combinedSpaces,
       otherConditions: body.otherConditions || ["주차 가능"],
+      customPrompt: body.customPrompt,
+      geminiApiKey: body.geminiApiKey || process.env.GEMINI_API_KEY,
     });
+
+    // 기존 추천 장소 갱신
+    db.placeRecommendations = db.placeRecommendations.filter(
+      (r) => r.meetingId !== mtg.id
+    );
+    for (const rec of aiResult.recommendations) {
+      db.placeRecommendations.push(rec);
+
+      // db.places에도 없는 장소면 등록하여 SELECT_PLACE 등에서 즉시 참조 가능하도록 보장
+      if (!db.places.some((p) => p.id === rec.placeId || p.name === rec.placeName)) {
+        db.places.push({
+          id: rec.placeId,
+          naverPlaceId: `nv_${rec.placeId}`,
+          name: rec.placeName,
+          category: "RESTAURANT",
+          cuisineType: (rec.cuisineType as any) || "한식",
+          hasFishMain: false,
+          isSpicyMain: false,
+          roadAddress: rec.roadAddress,
+          jibunAddress: rec.roadAddress,
+          areaSummary: body.area || mtg.areaHint || "도심권",
+          naverMapUrl: rec.naverMapUrl,
+          externalBookingUrl: rec.externalBookingUrl,
+          officialInfoSummary: rec.recommendationReason,
+          placeVerificationStatus: rec.placeVerificationStatus,
+        });
+      }
+    }
 
     await writeDatabase(db);
     return NextResponse.json({
       ok: true,
-      apiMode: process.env.NAVER_CLIENT_ID
-        ? "LIVE_NAVER_LOCAL_API"
-        : "SIMULATION_NAVER_LOCAL_SANDBOX",
+      apiMode: aiResult.aiEngineUsed,
+      aiEngineUsed: aiResult.aiEngineUsed,
+      promptSummary: aiResult.promptSummary,
+      recommendations: aiResult.recommendations,
+      anonymizedPromptPayload: aiResult.anonymizedPromptPayload,
       bookingApiConnected: false,
       browserSideVisitedFilteringRequired: true,
-      ...result,
     });
   }
 

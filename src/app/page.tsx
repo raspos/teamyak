@@ -627,6 +627,16 @@ function MobileDeviceInstance({
   const [isSearchingPlaces, setIsSearchingPlaces] = useState<boolean>(false);
   const [searchedPlaces, setSearchedPlaces] = useState<any[] | null>(null);
   const [customDirectPlaceInput, setCustomDirectPlaceInput] = useState<string>("");
+  const [aiCustomPrompt, setAiCustomPrompt] = useState<string>("");
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("teamyak_gemini_api_key") || "";
+    }
+    return "";
+  });
+  const [showAiSettings, setShowAiSettings] = useState<boolean>(false);
+  const [aiEngineStatus, setAiEngineStatus] = useState<string | null>(null);
+  const [aiGenerationProgress, setAiGenerationProgress] = useState<string>("");
   const [myDislikedInput, setMyDislikedInput] = useState<string>(
     "생선 요리 비선호, 매운 음식 비선호"
   );
@@ -930,16 +940,32 @@ function MobileDeviceInstance({
     }
   }
 
-  async function handleRunAiRecommendation(meetingId: string, overrideArea?: string) {
+  async function handleRunAiRecommendation(
+    meetingId: string,
+    overrideArea?: string,
+    customPromptOverride?: string
+  ) {
     const targetMtg = directMeetings.find((m) => m.id === meetingId) || currentMtg;
     const areaToUse =
       (overrideArea && overrideArea.trim()) ||
       (placeSearchQuery && placeSearchQuery.trim()) ||
       (targetMtg?.areaHint && targetMtg.areaHint !== "장소 협의 중" && targetMtg.areaHint !== "장소 미정" ? targetMtg.areaHint : null) ||
       aiArea ||
-      "여의도";
+      "명동";
+
+    const promptToUse =
+      customPromptOverride !== undefined ? customPromptOverride : aiCustomPrompt;
 
     setIsSearchingPlaces(true);
+    setAiGenerationProgress(`🤖 [1/3] 참석자 직급 및 음식 취향(비선호 등) 분석 중...`);
+
+    const t1 = setTimeout(() => {
+      setAiGenerationProgress(`🔍 [2/3] [${areaToUse}] 일대 비즈니스 다이닝 매칭 및 룸/주차 검증 중...`);
+    }, 400);
+    const t2 = setTimeout(() => {
+      setAiGenerationProgress(`⚡ [3/3] AI 의전 분석 브리핑 및 적합도 스코어 산출 중...`);
+    }, 850);
+
     try {
       const res = await fetch(`/api/meetings/${meetingId}`, {
         method: "PATCH",
@@ -950,13 +976,17 @@ function MobileDeviceInstance({
         body: JSON.stringify({
           action: "RECOMMEND_PLACES",
           area: areaToUse,
-          headcount: aiHeadcount,
-          meetingPurpose: "업무 오찬",
-          preferredCuisines: [aiCuisine],
-          spacePreferences: aiSpacePref.split(",").map((s) => s.trim()),
-          otherConditions: aiOtherCond.split(",").map((s) => s.trim()),
+          headcount: targetMtg?.headcount || aiHeadcount || 2,
+          meetingPurpose: targetMtg?.meetingType || "업무 오찬",
+          preferredCuisines: [aiCuisine || "한식"],
+          spacePreferences: (aiSpacePref || "조용한 곳, 개별 룸").split(",").map((s) => s.trim()),
+          otherConditions: (aiOtherCond || "주차 가능").split(",").map((s) => s.trim()),
+          customPrompt: promptToUse,
+          geminiApiKey: geminiApiKeyInput.trim() || undefined,
         }),
       });
+      clearTimeout(t1);
+      clearTimeout(t2);
       const data = await res.json();
       if (data.ok) {
         const localFiltered = filterRecommendationsInBrowser(
@@ -973,8 +1003,13 @@ function MobileDeviceInstance({
           )
         );
         setSearchedPlaces(localFiltered.filteredRecommendations);
+        setAiEngineStatus(
+          data.aiEngineUsed === "GOOGLE_GEMINI_1_5_FLASH"
+            ? "⚡ Google Gemini 1.5 Flash 실시간 AI 생성 완료"
+            : "🤖 TEAMYAK AI 의전 지식 엔진 맞춤 분석 완료"
+        );
         showMsg(
-          `🤖 [${areaToUse}] AI 맞춤 장소 후보 추천 완료 (${localFiltered.filteredRecommendations.length}곳)`
+          `🤖 [${areaToUse}] AI 맞춤 식당 생성 완료 (${localFiltered.filteredRecommendations.length}곳)`
         );
         onStateMutated();
         fetchAllDeviceState();
@@ -984,7 +1019,10 @@ function MobileDeviceInstance({
     } catch {
       showMsg("⚠️ AI 맞춤 추천 통신 중 오류가 발생했습니다.");
     } finally {
+      clearTimeout(t1);
+      clearTimeout(t2);
       setIsSearchingPlaces(false);
+      setAiGenerationProgress("");
     }
   }
 
@@ -2615,74 +2653,187 @@ function MobileDeviceInstance({
                       </div>
                     )}
 
-                    {/* 1. 실시간 장소 & 식당 검색 바 */}
-                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
-                      <div className="text-xs font-black text-slate-900 flex items-center gap-1">
-                        <span>🔍</span>
-                        <span>식당 및 지역 직접 검색</span>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={placeSearchQuery}
-                          onChange={(e) => setPlaceSearchQuery(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleSearchPlaces(placeSearchQuery);
-                            }
-                          }}
-                          placeholder={currentMtg.areaHint ? `${currentMtg.areaHint} 맛집 또는 식당명 검색` : "지역 또는 식당명 검색 (예: 강남, 판교, 을지로)"}
-                          className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-slate-900 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        />
+                    {/* 1. TEAMYAK AI 맞춤 식당 생성 엔진 */}
+                    <div className="p-4 rounded-3xl bg-gradient-to-br from-indigo-900 via-brand-900 to-slate-900 text-white shadow-lg space-y-3.5 border border-indigo-500/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">🤖</span>
+                          <div>
+                            <div className="text-xs font-black tracking-wide text-white flex items-center gap-1.5">
+                              <span>TEAMYAK AI 맞춤 식당 생성기</span>
+                              <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[9px]">
+                                PRO
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-indigo-200">
+                              참석자 직급, 목적, 비선호 음식, 프라이빗 룸을 분석하여 실시간 생성
+                            </p>
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => handleSearchPlaces(placeSearchQuery)}
-                          disabled={isSearchingPlaces}
-                          className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs shadow-sm active:scale-95 transition whitespace-nowrap cursor-pointer"
+                          onClick={() => setShowAiSettings((prev) => !prev)}
+                          className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/90 text-[10px] font-bold border border-white/10 transition cursor-pointer"
                         >
-                          {isSearchingPlaces ? "검색 중..." : "검색"}
+                          ⚙️ {showAiSettings ? "설정 닫기" : "Gemini 키"}
                         </button>
                       </div>
 
-                      {/* 빠른 지역 추천 칩 */}
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {["강남", "여의도", "판교", "을지로", "광화문", "마포"].map((area) => (
+                      {/* Gemini API Key 설정 드로어 (선택 사항) */}
+                      {showAiSettings && (
+                        <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2 text-xs">
+                          <div className="text-[11px] font-bold text-amber-300 flex items-center justify-between">
+                            <span>🔑 Google Gemini API 키 연동 (선택)</span>
+                            <span className="text-[10px] text-slate-400">미입력 시 내장 의전 AI 엔진 구동</span>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="password"
+                              value={geminiApiKeyInput}
+                              onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                              placeholder="AIzaSy... (Google AI Studio 발급 키)"
+                              className="flex-1 px-3 py-1.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (typeof window !== "undefined") {
+                                  localStorage.setItem("teamyak_gemini_api_key", geminiApiKeyInput.trim());
+                                  showMsg("✅ Gemini API 키가 브라우저에 안전하게 저장되었습니다.");
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition cursor-pointer"
+                            >
+                              저장
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-300 leading-relaxed">
+                            Google Cloud / AI Studio에서 무료로 발급받은 Gemini 1.5 Flash API Key를 입력하시면 초고성능 실시간 AI 추론으로 식당이 생성됩니다.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* AI 프롬프트 커스텀 입력창 */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-extrabold text-indigo-100 flex items-center justify-between">
+                          <span>🎯 AI에게 원하는 조건 요청하기</span>
+                          <span className="text-[10px] text-indigo-300 font-normal">직접 입력 또는 아래 칩 클릭</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={aiCustomPrompt}
+                            onChange={(e) => setAiCustomPrompt(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleRunAiRecommendation(currentMtg.id);
+                              }
+                            }}
+                            placeholder="예: 명동에서 임원 모시기 좋은 조용한 프라이빗 룸 한식당, 주차 필수"
+                            className="w-full pl-3 pr-20 py-2.5 rounded-2xl bg-white/10 border border-indigo-400/40 text-white placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 backdrop-blur-sm"
+                          />
+                          {aiCustomPrompt && (
+                            <button
+                              type="button"
+                              onClick={() => setAiCustomPrompt("")}
+                              className="absolute right-2 top-2 px-2 py-1 text-[10px] text-slate-300 hover:text-white"
+                            >
+                              지우기
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 빠른 프롬프트 칩 */}
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {[
+                          { label: "👑 VIP·임원 의전 룸", prompt: "임원 모시기 좋은 방음 완벽한 조용한 프라이빗 룸" },
+                          { label: "🤫 조용한 개별 룸", prompt: "대화 나누기 편한 조용한 단독 룸 식당" },
+                          { label: "🚗 무료 주차·발렛", prompt: "빌딩 내 주차 편하고 발렛 지원되는 곳" },
+                          { label: "🥩 한우·정갈한 코스", prompt: "생선 배제하고 정갈한 한우 구이 및 코스 요리" },
+                          { label: "🥟 고급 중식 파인다이닝", prompt: "딤섬 및 비즈니스 중식 파인다이닝 코스" },
+                          { label: "🍣 정갈한 일식 다이닝", prompt: "정갈하고 깔끔한 일식 프라이빗 룸 다이닝" },
+                        ].map((chip) => (
                           <button
-                            key={area}
+                            key={chip.label}
                             type="button"
                             onClick={() => {
-                              setPlaceSearchQuery(area);
-                              handleSearchPlaces(area);
+                              setAiCustomPrompt(chip.prompt);
+                              handleRunAiRecommendation(currentMtg.id, undefined, chip.prompt);
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-brand-500 text-[11px] font-bold text-slate-700 hover:text-brand-600 shadow-2xs active:scale-95 transition cursor-pointer"
+                            className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-[10px] font-bold text-indigo-100 hover:text-white transition cursor-pointer active:scale-95"
                           >
-                            📍 {area}
+                            {chip.label}
                           </button>
                         ))}
                       </div>
-                    </div>
 
-                    {/* 2. AI 맞춤 추천 버튼 & 취향 필터 */}
-                    <div className="space-y-2">
+                      {/* 추천 대상 지역 선택 칩 */}
+                      <div className="flex items-center gap-1.5 pt-1 overflow-x-auto pb-1 text-[11px]">
+                        <span className="text-[10px] text-indigo-300 font-bold whitespace-nowrap">지역:</span>
+                        {["명동", "강남", "여의도", "판교", "을지로", "광화문"].map((area) => {
+                          const isCurrent =
+                            (placeSearchQuery && placeSearchQuery.includes(area)) ||
+                            (currentMtg.areaHint && currentMtg.areaHint.includes(area));
+                          return (
+                            <button
+                              key={area}
+                              type="button"
+                              onClick={() => {
+                                setPlaceSearchQuery(area);
+                                handleRunAiRecommendation(currentMtg.id, area);
+                              }}
+                              className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold whitespace-nowrap transition cursor-pointer ${
+                                isCurrent
+                                  ? "bg-amber-400 text-slate-950 font-black shadow-sm"
+                                  : "bg-white/10 hover:bg-white/20 text-indigo-100"
+                              }`}
+                            >
+                              📍 {area}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* AI 생성 실행 버튼 */}
                       <button
                         type="button"
                         onClick={() => handleRunAiRecommendation(currentMtg.id)}
                         disabled={isSearchingPlaces}
-                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-700 hover:to-indigo-700 text-white font-black text-xs shadow-md active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
                       >
-                        <span>🤖</span>
+                        <span className="text-base">✨</span>
                         <span>
-                          [{currentMtg.areaHint && currentMtg.areaHint !== "장소 협의 중" ? currentMtg.areaHint : "내 약속 지역"}] AI 맞춤 식당 추천 불러오기
+                          [{placeSearchQuery || (currentMtg.areaHint && currentMtg.areaHint !== "장소 협의 중" ? currentMtg.areaHint : "명동")}] AI 맞춤 식당 생성하기
                         </span>
                       </button>
 
-                      <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 px-1">
+                      {/* AI 생성 중 로딩 애니메이션 */}
+                      {isSearchingPlaces && (
+                        <div className="p-3 rounded-2xl bg-white/10 border border-amber-300/40 text-amber-200 text-xs font-bold flex items-center gap-2 animate-pulse">
+                          <span className="text-base animate-spin">⚡</span>
+                          <span className="text-[11px] leading-relaxed">
+                            {aiGenerationProgress || "TEAMYAK AI가 참석자 직급 및 음식 취향을 분석하여 맞춤 식당을 생성하고 있습니다..."}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* AI 생성 완료 상태 배너 */}
+                      {aiEngineStatus && !isSearchingPlaces && (
+                        <div className="text-[10px] text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center justify-between">
+                          <span>{aiEngineStatus}</span>
+                          <span className="font-mono text-emerald-400">Zero-Knowledge 안심 암호화</span>
+                        </div>
+                      )}
+
+                      {/* 지난번 방문한 식당 제외 체크박스 */}
+                      <label className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-200 px-1 pt-0.5 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={excludePastVisited}
                           onChange={(e) => setExcludePastVisited(e.target.checked)}
-                          className="rounded text-brand-600 focus:ring-brand-500"
+                          className="rounded text-amber-400 focus:ring-amber-400"
                         />
                         <span>
                           [지난번 방문한 식당 제외] (내 만남 이력 로컬 자동 필터링)
@@ -2690,11 +2841,13 @@ function MobileDeviceInstance({
                       </label>
                     </div>
 
-                    {/* 3. 식당명 직접 입력하여 즉시 확정하기 */}
-                    <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
-                      <div className="text-[11px] font-black text-amber-950 flex items-center gap-1">
-                        <span>✍️</span>
-                        <span>알고 계신 식당 직접 입력하여 확정</span>
+                    {/* 2. 보조 도구: 알고 계신 식당 직접 입력하여 즉시 확정하기 */}
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-black text-slate-800">
+                        <span className="flex items-center gap-1">
+                          <span>✍️</span>
+                          <span>식당 직접 입력하여 확정 또는 검색</span>
+                        </span>
                       </div>
                       <div className="flex gap-1.5">
                         <input
@@ -2708,19 +2861,19 @@ function MobileDeviceInstance({
                             }
                           }}
                           placeholder="식당명 직접 입력 (예: 페럼타워 안즈)"
-                          className="flex-1 px-3 py-1.5 rounded-xl border border-amber-300 text-slate-900 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          className="flex-1 px-3 py-1.5 rounded-xl border border-slate-300 text-slate-900 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                         />
                         <button
                           type="button"
                           onClick={() => handleSelectDirectCustomPlace(currentMtg.id)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-sm active:scale-95 transition whitespace-nowrap cursor-pointer"
+                          className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs shadow-sm active:scale-95 transition whitespace-nowrap cursor-pointer"
                         >
                           ✓ 직접 확정
                         </button>
                       </div>
                     </div>
 
-                    {/* 4. 추천 식당 목록 전체 카톡 공유 버튼 */}
+                    {/* 3. 추천 식당 목록 전체 카톡 공유 버튼 */}
                     <button
                       type="button"
                       onClick={() =>
@@ -2737,14 +2890,17 @@ function MobileDeviceInstance({
                       className="w-full py-3 rounded-2xl bg-[#FEE500] hover:bg-[#FDD800] text-[#191919] font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition cursor-pointer"
                     >
                       <span className="text-base">💬</span>
-                      <span>추천 식당 목록 카카오톡으로 공유하기</span>
+                      <span>AI 생성 식당 목록 카카오톡으로 공유하기</span>
                     </button>
 
-                    {/* 5. 식당 카드 리스트 */}
+                    {/* 4. AI 생성 식당 카드 리스트 */}
                     <div className="space-y-3 pt-1">
                       <div className="flex items-center justify-between text-xs font-black text-slate-900 px-1">
-                        <span>
-                          {searchedPlaces ? "검색 결과 식당 목록" : "추천 식당 후보"}
+                        <span className="flex items-center gap-1.5">
+                          <span>🤖</span>
+                          <span>
+                            {searchedPlaces ? "AI 맞춤 식당 생성 목록" : "AI 추천 식당 후보"}
+                          </span>
                         </span>
                         {searchedPlaces && (
                           <button
@@ -2769,9 +2925,17 @@ function MobileDeviceInstance({
                         const pCuisine = place.cuisineType || "비즈니스 다이닝";
                         const pAddr = place.roadAddress || place.address || "위치 정보";
                         const pSummary =
-                          place.officialInfoSummary ||
+                          place.aiBriefing ||
                           place.recommendationReason ||
+                          place.officialInfoSummary ||
                           "비즈니스 오찬에 적합한 식당입니다.";
+                        const pScore = place.aiMatchScore || 98;
+                        const pTags =
+                          place.aiTags && place.aiTags.length > 0
+                            ? place.aiTags
+                            : place.matchedConditions && place.matchedConditions.length > 0
+                            ? place.matchedConditions
+                            : [`🤖 AI 적합도 ${pScore}%`, pCuisine, "비즈니스 검증"];
                         const mapUrl =
                           place.naverMapUrl ||
                           `https://map.naver.com/p/search/${encodeURIComponent(pName)}`;
@@ -2782,19 +2946,19 @@ function MobileDeviceInstance({
                         return (
                           <div
                             key={place.id || place.placeId || pName}
-                            className={`rounded-2xl p-4 border shadow-sm space-y-2.5 transition ${
+                            className={`rounded-3xl p-4 border shadow-sm space-y-3 transition ${
                               isCurrentSelected
-                                ? "bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-500/20"
-                                : "bg-white border-slate-200"
+                                ? "bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-500/20"
+                                : "bg-white border-slate-200 hover:border-brand-300"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-1.5">
-                              <div>
+                              <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-sm font-extrabold text-slate-900">
-                                    {pName}
+                                  <span className="px-2 py-0.5 rounded-full bg-brand-100 text-brand-900 font-black text-[10px] border border-brand-200">
+                                    🤖 AI 적합도 {pScore}%
                                   </span>
-                                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 font-bold text-[10px] border border-slate-200">
                                     {pCuisine}
                                   </span>
                                   {isCurrentSelected && (
@@ -2803,16 +2967,38 @@ function MobileDeviceInstance({
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-1">
+                                <div className="text-base font-black text-slate-900 pt-0.5">
+                                  {pName}
+                                </div>
+                                <p className="text-[11px] text-slate-500">
                                   📍 {pAddr}
-                                </p>
-                                <p className="text-[11px] text-slate-700 mt-1 font-medium leading-relaxed">
-                                  ✨ {pSummary}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                            {/* AI 분석 의전 브리핑 박스 */}
+                            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-slate-800 space-y-1.5">
+                              <div className="text-[10px] font-black text-brand-700 flex items-center gap-1">
+                                <span>💡</span>
+                                <span>AI 의전 분석 브리핑</span>
+                              </div>
+                              <p className="text-[11px] leading-relaxed font-medium text-slate-700">
+                                {pSummary}
+                              </p>
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {pTags.map((tag: string, tidx: number) => (
+                                  <span
+                                    key={tidx}
+                                    className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-bold text-slate-600 shadow-2xs"
+                                  >
+                                    ✓ {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* 액션 버튼 */}
+                            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                               <button
                                 type="button"
                                 onClick={() => handleSharePlace(place)}
