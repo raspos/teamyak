@@ -73,10 +73,26 @@ export async function GET(req: NextRequest) {
     process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
   );
 
-  return NextResponse.json({
+  let cookieProfile: any = null;
+  const profileCookieVal = req.cookies.get("teamyak_user_profile")?.value;
+  if (profileCookieVal) {
+    try {
+      cookieProfile = JSON.parse(decodeURIComponent(profileCookieVal));
+    } catch {}
+  }
+  if (currentUser && cookieProfile?.orgName) {
+    if (!currentUser.teamId) {
+      currentUser.teamId = cookieProfile.orgName;
+      currentUser.jobTitle = cookieProfile.jobTitle || currentUser.jobTitle;
+      currentUser.displayName = cookieProfile.displayName || currentUser.displayName;
+    }
+  }
+
+  const res = NextResponse.json({
     version: "2026-11-18-kakao-v2",
     authenticated: Boolean(currentUser),
     user: currentUser,
+    cookieProfile,
     storageEngine: db.storageEngine,
     seedRecoveryCodesForTest: {
       u_kim: SEED_RECOVERY_CODE_KIM,
@@ -134,6 +150,20 @@ export async function GET(req: NextRequest) {
       externalServices: getExternalServiceConfigStatus(),
     },
   });
+
+  if (currentUser?.teamId && currentUser?.displayName) {
+    const cookiePayload = JSON.stringify({
+      displayName: currentUser.displayName,
+      jobTitle: currentUser.jobTitle,
+      orgName: currentUser.teamId,
+    });
+    res.cookies.set("teamyak_user_profile", encodeURIComponent(cookiePayload), {
+      path: "/",
+      maxAge: 365 * 24 * 3600,
+      sameSite: "lax",
+    });
+  }
+  return res;
 }
 
 export async function POST(req: NextRequest) {
@@ -350,6 +380,14 @@ export async function POST(req: NextRequest) {
         `카카오 회원 (${kakaoId.slice(-4)})`;
       const userId = `u_kakao_${kakaoId}`;
 
+      let cookieProfile: any = null;
+      const profileCookieVal = req.cookies.get("teamyak_user_profile")?.value;
+      if (profileCookieVal) {
+        try {
+          cookieProfile = JSON.parse(decodeURIComponent(profileCookieVal));
+        } catch {}
+      }
+
       let user = db.users.find(
         (u) => u.id === userId || u.kakaoIdHash === `kakao_hash_${kakaoId}`
       );
@@ -358,15 +396,18 @@ export async function POST(req: NextRequest) {
           id: userId,
           kakaoIdHash: `kakao_hash_${kakaoId}`,
           accountType: "REAL_KAKAO_OAUTH",
-          displayName: nickname,
-          jobTitle: "팀약 회원",
-          teamId: null, // 무팀 독립성 유지
+          displayName: cookieProfile?.displayName || nickname,
+          jobTitle: cookieProfile?.jobTitle || "팀약 회원",
+          teamId: cookieProfile?.orgName || null,
           createdAt: new Date().toISOString(),
         };
         db.users.push(user);
       } else {
-        // 이미 사용자가 직접 설정한 이름/직급/소속이 있다면 그대로 보존
-        if (
+        if (cookieProfile?.orgName) {
+          user.displayName = cookieProfile.displayName || user.displayName;
+          user.jobTitle = cookieProfile.jobTitle || user.jobTitle;
+          user.teamId = cookieProfile.orgName;
+        } else if (
           !user.displayName ||
           user.displayName.startsWith("카카오 회원") ||
           user.displayName === "팀약 회원"
@@ -393,6 +434,7 @@ export async function POST(req: NextRequest) {
       const res = NextResponse.json({
         ok: true,
         user,
+        cookieProfile,
         sessionToken: signedToken,
       });
       res.cookies.set("teamyak_session", signedToken, {
@@ -401,6 +443,18 @@ export async function POST(req: NextRequest) {
         sameSite: "lax",
         maxAge: 30 * 24 * 3600,
       });
+      if (user.teamId && user.displayName) {
+        const cookiePayload = JSON.stringify({
+          displayName: user.displayName,
+          jobTitle: user.jobTitle,
+          orgName: user.teamId,
+        });
+        res.cookies.set("teamyak_user_profile", encodeURIComponent(cookiePayload), {
+          path: "/",
+          maxAge: 365 * 24 * 3600,
+          sameSite: "lax",
+        });
+      }
       return res;
     } catch (e: any) {
       return NextResponse.json(
@@ -460,18 +514,30 @@ export async function POST(req: NextRequest) {
       supabaseUser.user_metadata?.name ||
       "카카오 사용자";
 
+    let cookieProfile: any = null;
+    const profileCookieVal = req.cookies.get("teamyak_user_profile")?.value;
+    if (profileCookieVal) {
+      try {
+        cookieProfile = JSON.parse(decodeURIComponent(profileCookieVal));
+      } catch {}
+    }
+
     let user = db.users.find((u) => u.id === userId);
     if (!user) {
       user = {
         id: userId,
         kakaoIdHash: `kakao_hash_${kakaoProviderId}`,
         accountType: "REAL_KAKAO_OAUTH",
-        displayName,
-        jobTitle: "팀약 회원",
-        teamId: null,
+        displayName: cookieProfile?.displayName || displayName,
+        jobTitle: cookieProfile?.jobTitle || "팀약 회원",
+        teamId: cookieProfile?.orgName || null,
         createdAt: new Date().toISOString(),
       };
       db.users.push(user);
+    } else if (cookieProfile?.orgName) {
+      user.displayName = cookieProfile.displayName || user.displayName;
+      user.jobTitle = cookieProfile.jobTitle || user.jobTitle;
+      user.teamId = cookieProfile.orgName;
     }
 
     const sessId = `sess_${user.id}_${Date.now()}`;
@@ -492,6 +558,7 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({
       ok: true,
       user,
+      cookieProfile,
       sessionToken: signedToken,
     });
     res.cookies.set("teamyak_session", signedToken, {
@@ -499,6 +566,18 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       sameSite: "lax",
     });
+    if (user.teamId && user.displayName) {
+      const cookiePayload = JSON.stringify({
+        displayName: user.displayName,
+        jobTitle: user.jobTitle,
+        orgName: user.teamId,
+      });
+      res.cookies.set("teamyak_user_profile", encodeURIComponent(cookiePayload), {
+        path: "/",
+        maxAge: 365 * 24 * 3600,
+        sameSite: "lax",
+      });
+    }
     return res;
   }
 
@@ -595,11 +674,23 @@ export async function POST(req: NextRequest) {
     }
 
     await writeDatabase(db);
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       user: currentUser,
       message: "프로필이 성공적으로 저장되었습니다."
     });
+
+    const cookiePayload = JSON.stringify({
+      displayName: currentUser.displayName,
+      jobTitle: currentUser.jobTitle,
+      orgName: currentUser.teamId,
+    });
+    res.cookies.set("teamyak_user_profile", encodeURIComponent(cookiePayload), {
+      path: "/",
+      maxAge: 365 * 24 * 3600,
+      sameSite: "lax",
+    });
+    return res;
   }
 
   // 3. 모바일 기기 변경 대비 마스터키 복구 봉투 저장 (6자리 PIN 등 저엔트로피 비밀값 서버에서도 거부!)

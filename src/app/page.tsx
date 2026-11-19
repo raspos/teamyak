@@ -102,6 +102,78 @@ interface AccountInfo {
   email?: string;
 }
 
+interface PersistedUserProfile {
+  displayName: string;
+  orgName: string;
+  jobTitle: string;
+}
+
+function getPersistedProfile(): PersistedUserProfile | null {
+  if (typeof window === "undefined") return null;
+  // 1. localStorage teamyak_custom_profile
+  try {
+    const raw = localStorage.getItem("teamyak_custom_profile");
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && (p.orgName || p.displayName)) {
+        return {
+          displayName: p.displayName || "",
+          orgName: p.orgName || "",
+          jobTitle: p.jobTitle || "",
+        };
+      }
+    }
+  } catch {}
+
+  // 2. localStorage teamyak_saved_profile_v2
+  try {
+    const raw = localStorage.getItem("teamyak_saved_profile_v2");
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && (p.orgName || p.displayName)) {
+        return {
+          displayName: p.displayName || "",
+          orgName: p.orgName || "",
+          jobTitle: p.jobTitle || "",
+        };
+      }
+    }
+  } catch {}
+
+  // 3. document.cookie teamyak_user_profile
+  try {
+    const match = document.cookie.match(/teamyak_user_profile=([^;]+)/);
+    if (match && match[1]) {
+      const decoded = decodeURIComponent(match[1]);
+      const p = JSON.parse(decoded);
+      if (p && (p.orgName || p.displayName)) {
+        return {
+          displayName: p.displayName || "",
+          orgName: p.orgName || "",
+          jobTitle: p.jobTitle || "",
+        };
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+function savePersistedProfile(profile: PersistedUserProfile) {
+  if (typeof window === "undefined") return;
+  const payload = JSON.stringify(profile);
+  try {
+    localStorage.setItem("teamyak_custom_profile", payload);
+    localStorage.setItem("teamyak_saved_profile_v2", payload);
+    localStorage.setItem("teamyak_profile_onboarding_done", "true");
+  } catch {}
+  try {
+    document.cookie = `teamyak_user_profile=${encodeURIComponent(
+      payload
+    )}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch {}
+}
+
 export default function TeamyakUnifiedApp() {
   const [dualDeviceMode, setDualDeviceMode] = useState<boolean>(false);
   const [viewportWidth, setViewportWidth] = useState<number>(390);
@@ -150,40 +222,41 @@ export default function TeamyakUnifiedApp() {
       .then((r) => r.json())
       .then((data) => {
         let accList: AccountInfo[] = [];
-        const savedCustomProfile =
-          typeof window !== "undefined"
-            ? localStorage.getItem("teamyak_custom_profile")
-            : null;
-        let parsedProfile: { displayName?: string; jobTitle?: string; orgName?: string } | null = null;
-        if (savedCustomProfile) {
-          try {
-            parsedProfile = JSON.parse(savedCustomProfile);
-          } catch {}
+        const p = getPersistedProfile();
+        const cookieProf = data.cookieProfile;
+        const u = data.user;
+
+        const effectiveName =
+          p?.displayName ||
+          (u?.teamId ? u?.displayName : "") ||
+          cookieProf?.displayName ||
+          u?.displayName ||
+          "";
+        const effectiveOrg =
+          p?.orgName ||
+          u?.teamId ||
+          cookieProf?.orgName ||
+          "";
+        const effectiveTitle =
+          p?.jobTitle ||
+          (u?.jobTitle && u.jobTitle !== "팀약 회원" ? u.jobTitle : "") ||
+          cookieProf?.jobTitle ||
+          (effectiveOrg ? `${effectiveOrg} 담당자` : "팀약 회원");
+
+        if (effectiveName && effectiveOrg && (!p || !p.orgName)) {
+          savePersistedProfile({
+            displayName: effectiveName,
+            orgName: effectiveOrg,
+            jobTitle: effectiveTitle,
+          });
         }
 
-        if (data.authenticated && data.user) {
-          const u = data.user;
-          const serverHasCustom =
-            u.displayName &&
-            !u.displayName.startsWith("카카오 회원") &&
-            u.displayName !== "팀약 회원" &&
-            u.teamId;
-
-          const effectiveName = parsedProfile?.displayName || (serverHasCustom ? u.displayName : "");
-          const effectiveOrg = parsedProfile?.orgName || (serverHasCustom ? u.teamId : "");
-          const effectiveTitle = parsedProfile?.jobTitle || (serverHasCustom ? u.jobTitle : "");
-
-          if (serverHasCustom && !parsedProfile) {
-            const restored = {
-              displayName: u.displayName,
-              jobTitle: u.jobTitle || "",
-              orgName: u.teamId || "",
-            };
-            try {
-              localStorage.setItem("teamyak_custom_profile", JSON.stringify(restored));
-              localStorage.setItem("teamyak_profile_onboarding_done", "true");
-            } catch {}
-          } else if (parsedProfile?.displayName && (!u.displayName || u.displayName.startsWith("카카오 회원"))) {
+        if (data.authenticated && u) {
+          if (
+            p?.displayName &&
+            p?.orgName &&
+            (!u.teamId || !u.displayName || u.displayName.startsWith("카카오 회원"))
+          ) {
             // 클라이언트에 저장된 내 정보를 서버 DB로 자동 동기화
             fetch("/api/auth", {
               method: "POST",
@@ -193,9 +266,9 @@ export default function TeamyakUnifiedApp() {
               },
               body: JSON.stringify({
                 action: "UPDATE_PROFILE",
-                displayName: parsedProfile.displayName,
-                jobTitle: parsedProfile.jobTitle || `${parsedProfile.orgName || ""} 담당자`,
-                orgName: parsedProfile.orgName || "",
+                displayName: p.displayName,
+                jobTitle: p.jobTitle || `${p.orgName} 담당자`,
+                orgName: p.orgName,
               }),
             }).catch(() => {});
           }
@@ -214,10 +287,6 @@ export default function TeamyakUnifiedApp() {
           accList = [kakaoAcc];
           setInitialUserId(u.id);
         } else if (savedToken) {
-          const effectiveName = parsedProfile?.displayName || "";
-          const effectiveOrg = parsedProfile?.orgName || "";
-          const effectiveTitle = parsedProfile?.jobTitle || "";
-
           const fallbackKakaoAcc: AccountInfo = {
             id: "u_kakao_client",
             accountType: "REAL_KAKAO_OAUTH",
@@ -599,56 +668,35 @@ function MobileDeviceInstance({
       const token =
         localStorage.getItem("teamyak_session_token") ||
         localStorage.getItem("teamyak_supabase_access_token");
-      const savedProfile = localStorage.getItem("teamyak_custom_profile");
-      const onboardingDone = localStorage.getItem("teamyak_profile_onboarding_done");
-      if (token && !savedProfile && onboardingDone !== "true") {
+      const p = getPersistedProfile();
+      if (token && (!p || !p.orgName || !p.displayName)) {
         return true;
       }
     }
     return false;
   });
   const [profileNameInput, setProfileNameInput] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teamyak_custom_profile");
-      if (saved) {
-        try {
-          return JSON.parse(saved).displayName || "";
-        } catch {}
-      }
-    }
-    return "";
+    const p = getPersistedProfile();
+    return p?.displayName || "";
   });
   const [profileOrgInput, setProfileOrgInput] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teamyak_custom_profile");
-      if (saved) {
-        try {
-          return JSON.parse(saved).orgName || "";
-        } catch {}
-      }
-    }
-    return "";
+    const p = getPersistedProfile();
+    return p?.orgName || "";
   });
   const [profileTitleInput, setProfileTitleInput] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teamyak_custom_profile");
-      if (saved) {
-        try {
-          const p = JSON.parse(saved);
-          return p.jobTitle && p.orgName
-            ? p.jobTitle.replace(p.orgName, "").trim()
-            : p.jobTitle || "";
-        } catch {}
-      }
-    }
-    return "";
+    const p = getPersistedProfile();
+    if (!p) return "";
+    return p.jobTitle && p.orgName
+      ? p.jobTitle.replace(p.orgName, "").trim()
+      : p.jobTitle || "";
   });
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
   const [hasProfile, setHasProfile] = useState<boolean>(() => {
+    const p = getPersistedProfile();
+    if (p?.orgName && p?.displayName) return true;
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teamyak_custom_profile");
       const done = localStorage.getItem("teamyak_profile_onboarding_done");
-      return Boolean(saved || done === "true");
+      if (done === "true" && (p?.displayName || p?.orgName)) return true;
     }
     return false;
   });
@@ -661,23 +709,17 @@ function MobileDeviceInstance({
         "";
       setSessionToken(token);
       setIsLoggedIn(Boolean(token));
-      const saved = localStorage.getItem("teamyak_custom_profile");
-      const done = localStorage.getItem("teamyak_profile_onboarding_done");
-      if (saved || done === "true") {
-        setHasProfile(true);
-        if (saved) {
-          try {
-            const p = JSON.parse(saved);
-            if (p.displayName) setProfileNameInput(p.displayName);
-            if (p.orgName) setProfileOrgInput(p.orgName);
-            if (p.jobTitle) {
-              setProfileTitleInput(
-                p.jobTitle && p.orgName
-                  ? p.jobTitle.replace(p.orgName, "").trim()
-                  : p.jobTitle
-              );
-            }
-          } catch {}
+      const p = getPersistedProfile();
+      if (p?.displayName || p?.orgName) {
+        if (p.orgName && p.displayName) setHasProfile(true);
+        if (p.displayName) setProfileNameInput(p.displayName);
+        if (p.orgName) setProfileOrgInput(p.orgName);
+        if (p.jobTitle) {
+          setProfileTitleInput(
+            p.jobTitle && p.orgName
+              ? p.jobTitle.replace(p.orgName, "").trim()
+              : p.jobTitle
+          );
         }
       }
 
@@ -688,28 +730,41 @@ function MobileDeviceInstance({
           .then((data) => {
             if (data.authenticated && data.user) {
               const u = data.user;
-              const serverHasCustom =
-                u.displayName &&
-                !u.displayName.startsWith("카카오 회원") &&
-                u.displayName !== "팀약 회원" &&
-                u.teamId;
+              const cookieP = data.cookieProfile;
+              const curP = getPersistedProfile();
+              const effectiveName =
+                curP?.displayName ||
+                (u.displayName && !u.displayName.startsWith("카카오 회원")
+                  ? u.displayName
+                  : cookieP?.displayName || "");
+              const effectiveOrg =
+                curP?.orgName || u.teamId || cookieP?.orgName || "";
+              const effectiveTitle =
+                curP?.jobTitle ||
+                (u.jobTitle && u.jobTitle !== "팀약 회원"
+                  ? u.jobTitle
+                  : cookieP?.jobTitle || "");
 
-              if (serverHasCustom) {
+              if (effectiveName && effectiveOrg) {
                 const restored = {
-                  displayName: u.displayName,
-                  jobTitle: u.jobTitle || "",
-                  orgName: u.teamId || "",
+                  displayName: effectiveName,
+                  jobTitle:
+                    effectiveTitle && effectiveOrg
+                      ? (effectiveTitle.startsWith(effectiveOrg)
+                          ? effectiveTitle
+                          : `${effectiveOrg} ${effectiveTitle}`)
+                      : `${effectiveOrg} 담당자`,
+                  orgName: effectiveOrg,
                 };
-                localStorage.setItem("teamyak_custom_profile", JSON.stringify(restored));
-                localStorage.setItem("teamyak_profile_onboarding_done", "true");
+                savePersistedProfile(restored);
                 setHasProfile(true);
                 setShowProfileModal(false);
-                setProfileNameInput(u.displayName);
-                setProfileOrgInput(u.teamId);
+                setProfileNameInput(effectiveName);
+                setProfileOrgInput(effectiveOrg);
                 setProfileTitleInput(
-                  u.jobTitle && u.teamId
-                    ? u.jobTitle.replace(u.teamId, "").trim()
-                    : u.jobTitle || ""
+                  effectiveTitle && effectiveOrg
+                    ? effectiveTitle.replace(effectiveOrg, "").trim()
+                    : effectiveTitle || ""
                 );
               }
             }
@@ -802,17 +857,33 @@ function MobileDeviceInstance({
     }
   }, []);
 
-  // 최초 로그인 온보딩 감지 (프로필 정보가 없으면 무조건 입력 화면 노출)
+  // 최초 로그인 온보딩 감지: 회사명(소속)과 이름이 이미 저장되어 있으면 온보딩 모달을 절대 띄우지 않음!
   useEffect(() => {
     if (typeof window !== "undefined") {
       const token =
         localStorage.getItem("teamyak_session_token") ||
         localStorage.getItem("teamyak_supabase_access_token");
-      const savedProfile = localStorage.getItem("teamyak_custom_profile");
-      if (token && !savedProfile) {
+      const p = getPersistedProfile();
+      if (p?.orgName && p?.displayName) {
+        setHasProfile(true);
+        setShowProfileModal(false);
+        setProfileNameInput(p.displayName);
+        setProfileOrgInput(p.orgName);
+        setProfileTitleInput(
+          p.jobTitle && p.orgName
+            ? p.jobTitle.replace(p.orgName, "").trim()
+            : p.jobTitle || ""
+        );
+        return;
+      }
+
+      if (token && (!p || !p.orgName)) {
         const curAcc = accounts.find((a) => a.id === currentUserId);
         if (curAcc?.displayName && !profileNameInput) {
           setProfileNameInput(curAcc.displayName);
+        }
+        if (curAcc?.teamId && !profileOrgInput) {
+          setProfileOrgInput(curAcc.teamId);
         }
         setShowProfileModal(true);
       }
@@ -829,21 +900,21 @@ function MobileDeviceInstance({
       return;
     }
     setIsSavingProfile(true);
-    const fullTitle = profileTitleInput.trim()
-      ? `${profileOrgInput.trim()} ${profileTitleInput.trim()}`
-      : `${profileOrgInput.trim()} 담당자`;
+    const org = profileOrgInput.trim();
+    const titleOnly = profileTitleInput.trim();
+    const fullTitle = titleOnly
+      ? titleOnly.startsWith(org)
+        ? titleOnly
+        : `${org} ${titleOnly}`
+      : `${org} 담당자`;
 
     const profileObj = {
       displayName: profileNameInput.trim(),
       jobTitle: fullTitle,
-      orgName: profileOrgInput.trim(),
+      orgName: org,
     };
 
-    // 로컬 스토리지 및 리액트 상태 즉시 반영 (화면 멈춤 완전 방지)
-    if (typeof window !== "undefined") {
-      localStorage.setItem("teamyak_profile_onboarding_done", "true");
-      localStorage.setItem("teamyak_custom_profile", JSON.stringify(profileObj));
-    }
+    savePersistedProfile(profileObj);
     setHasProfile(true);
     setShowProfileModal(false);
 
@@ -851,10 +922,10 @@ function MobileDeviceInstance({
     if (cur) {
       cur.displayName = profileNameInput.trim();
       cur.jobTitle = fullTitle;
-      cur.teamId = profileOrgInput.trim() || cur.teamId;
+      cur.teamId = org;
     }
 
-    showMsg("🎉 환영합니다! 프로필이 설정되었습니다.");
+    showMsg("🎉 프로필이 안전하게 저장되었습니다.");
     onStateMutated();
 
     try {
@@ -868,16 +939,17 @@ function MobileDeviceInstance({
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      fetch("/api/auth", {
+      await fetch("/api/auth", {
         method: "POST",
         headers,
         body: JSON.stringify({
           action: "UPDATE_PROFILE",
           displayName: profileNameInput.trim(),
           jobTitle: fullTitle,
-          orgName: profileOrgInput.trim(),
+          orgName: org,
         }),
-      }).catch(() => {});
+      });
+    } catch {
     } finally {
       setIsSavingProfile(false);
     }
@@ -1953,7 +2025,16 @@ function MobileDeviceInstance({
     );
   }
 
-  if (!hasProfile) {
+  const currentPersisted = getPersistedProfile();
+  const effectiveHasProfile =
+    hasProfile ||
+    Boolean(
+      currentPersisted?.orgName &&
+        currentPersisted?.displayName &&
+        !currentPersisted.displayName.startsWith("카카오 회원")
+    );
+
+  if (!effectiveHasProfile) {
     return (
       <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col p-6 my-4 space-y-6">
         <div className="text-center space-y-1">
@@ -2031,35 +2112,41 @@ function MobileDeviceInstance({
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
           <span className="text-xs font-black text-white">
             {(() => {
-              const saved = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
-              if (saved) {
-                try {
-                  const p = JSON.parse(saved);
-                  if (p.displayName) return p.displayName;
-                } catch {}
-              }
+              const p = getPersistedProfile();
+              if (p?.displayName) return p.displayName;
               const cur = accounts.find((a) => a.id === currentUserId);
               return cur?.displayName || "카카오 회원";
             })()}
           </span>
           <span className="text-[10px] text-slate-400">
             {(() => {
-              const saved = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
-              if (saved) {
-                try {
-                  const p = JSON.parse(saved);
-                  if (p.orgName && p.jobTitle) return `(${p.orgName} ${p.jobTitle})`;
-                  if (p.orgName) return `(${p.orgName})`;
-                  if (p.jobTitle) return `(${p.jobTitle})`;
-                } catch {}
+              const p = getPersistedProfile();
+              if (p?.orgName && p?.jobTitle) {
+                const title = p.jobTitle.startsWith(p.orgName)
+                  ? p.jobTitle
+                  : `${p.orgName} ${p.jobTitle}`;
+                return `(${title})`;
               }
+              if (p?.orgName) return `(${p.orgName})`;
+              if (p?.jobTitle && p.jobTitle !== "팀약 회원") return `(${p.jobTitle})`;
               const cur = accounts.find((a) => a.id === currentUserId);
-              return cur?.jobTitle ? `(${cur.jobTitle})` : "";
+              return cur?.jobTitle && cur.jobTitle !== "팀약 회원" ? `(${cur.jobTitle})` : "";
             })()}
           </span>
           <button
             type="button"
-            onClick={() => setShowProfileModal(true)}
+            onClick={() => {
+              const p = getPersistedProfile();
+              const cur = accounts.find((a) => a.id === currentUserId);
+              setProfileNameInput(p?.displayName || cur?.displayName || "");
+              setProfileOrgInput(p?.orgName || (cur?.teamId && cur.teamId !== "null" ? cur.teamId : ""));
+              setProfileTitleInput(
+                p?.jobTitle && p?.orgName
+                  ? p.jobTitle.replace(p.orgName, "").trim()
+                  : p?.jobTitle || (cur?.jobTitle && cur.jobTitle !== "팀약 회원" ? cur.jobTitle : "")
+              );
+              setShowProfileModal(true);
+            }}
             className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[9px] font-bold border border-slate-700 transition cursor-pointer"
           >
             ✏️ 수정
@@ -3484,14 +3571,15 @@ function MobileDeviceInstance({
 
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-slate-800">
                 {(() => {
+                  const p = getPersistedProfile();
                   const cur = accounts.find((a) => a.id === currentUserId);
-                  const savedCustom = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
-                  let parsed: any = null;
-                  if (savedCustom) {
-                    try { parsed = JSON.parse(savedCustom); } catch {}
-                  }
-                  const dName = parsed?.displayName || cur?.displayName || "카카오 회원";
-                  const jTitle = parsed?.jobTitle || cur?.jobTitle || (parsed?.orgName ? `${parsed.orgName} 담당자` : "팀약 회원");
+                  const dName = p?.displayName || cur?.displayName || "카카오 회원";
+                  const jTitle =
+                    p?.jobTitle && p?.orgName
+                      ? p.jobTitle.startsWith(p.orgName)
+                        ? p.jobTitle
+                        : `${p.orgName} ${p.jobTitle}`
+                      : p?.jobTitle || (p?.orgName ? `${p.orgName} 담당자` : cur?.jobTitle || "팀약 회원");
                   return (
                     <>
                       <div className="flex items-center justify-between">
@@ -3516,18 +3604,16 @@ function MobileDeviceInstance({
               <div className="flex gap-2">
                 <button
                   onClick={() => {
+                    const p = getPersistedProfile();
                     const cur = accounts.find((a) => a.id === currentUserId);
-                    const savedCustom = typeof window !== "undefined" ? localStorage.getItem("teamyak_custom_profile") : null;
-                    let parsed: any = null;
-                    if (savedCustom) {
-                      try { parsed = JSON.parse(savedCustom); } catch {}
-                    }
-                    setProfileNameInput(parsed?.displayName || cur?.displayName || "");
-                    setProfileOrgInput(parsed?.orgName || (cur?.teamId && cur.teamId !== "null" ? cur.teamId : ""));
+                    setProfileNameInput(p?.displayName || cur?.displayName || "");
+                    setProfileOrgInput(
+                      p?.orgName || (cur?.teamId && cur.teamId !== "null" ? cur.teamId : "")
+                    );
                     setProfileTitleInput(
-                      parsed?.jobTitle
-                        ? parsed.jobTitle.replace(parsed.orgName || "", "").trim()
-                        : cur?.jobTitle || ""
+                      p?.jobTitle && p?.orgName
+                        ? p.jobTitle.replace(p.orgName, "").trim()
+                        : p?.jobTitle || (cur?.jobTitle && cur.jobTitle !== "팀약 회원" ? cur.jobTitle : "")
                     );
                     setShowProfileModal(true);
                   }}
@@ -3643,7 +3729,9 @@ function MobileDeviceInstance({
                 👋
               </div>
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
-                {typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile")
+                {typeof window !== "undefined" &&
+                !getPersistedProfile()?.orgName &&
+                !hasProfile
                   ? "환영합니다! 내 정보를 입력해 주세요"
                   : "내 프로필 수정"}
               </h3>
@@ -3694,7 +3782,8 @@ function MobileDeviceInstance({
             </div>
 
             <div className="pt-3 flex gap-2">
-              {typeof window !== "undefined" && (localStorage.getItem("teamyak_custom_profile") || hasProfile) ? (
+              {typeof window !== "undefined" &&
+              (getPersistedProfile()?.orgName || hasProfile) ? (
                 <button
                   type="button"
                   onClick={() => setShowProfileModal(false)}
@@ -3708,14 +3797,17 @@ function MobileDeviceInstance({
                 onClick={handleSaveProfile}
                 disabled={isSavingProfile}
                 className={`${
-                  typeof window !== "undefined" && (localStorage.getItem("teamyak_custom_profile") || hasProfile)
+                  typeof window !== "undefined" &&
+                  (getPersistedProfile()?.orgName || hasProfile)
                     ? "flex-1"
                     : "w-full"
                 } py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-sm shadow-md transition disabled:opacity-50 active:scale-95 cursor-pointer`}
               >
                 {isSavingProfile
                   ? "저장 중..."
-                  : typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile") && !hasProfile
+                  : typeof window !== "undefined" &&
+                    !getPersistedProfile()?.orgName &&
+                    !hasProfile
                   ? "입력 완료하고 팀약 시작하기 →"
                   : "저장 완료"}
               </button>
