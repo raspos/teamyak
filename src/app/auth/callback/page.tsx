@@ -66,6 +66,19 @@ export default function AuthCallbackPage() {
               const exchangeData = await exchangeRes.json();
               if (exchangeData.sessionToken) {
                 localStorage.setItem("teamyak_session_token", exchangeData.sessionToken);
+                // 기등록된 사용자 프로필이 있으면 브라우저 스토리지에 복원
+                if (exchangeData.user) {
+                  const u = exchangeData.user;
+                  if (u.displayName && !u.displayName.startsWith("카카오 회원") && u.teamId) {
+                    const p = {
+                      displayName: u.displayName,
+                      jobTitle: u.jobTitle || "",
+                      orgName: u.teamId || "",
+                    };
+                    localStorage.setItem("teamyak_custom_profile", JSON.stringify(p));
+                    localStorage.setItem("teamyak_profile_onboarding_done", "true");
+                  }
+                }
                 setStatus("카카오 실계정 로그인 성공! 이동 중...");
               }
             } else {
@@ -143,6 +156,18 @@ export default function AuthCallbackPage() {
             const syncData = await syncRes.json();
             if (syncData.sessionToken) {
               localStorage.setItem("teamyak_session_token", syncData.sessionToken);
+              if (syncData.user) {
+                const u = syncData.user;
+                if (u.displayName && !u.displayName.startsWith("카카오 회원") && u.teamId) {
+                  const p = {
+                    displayName: u.displayName,
+                    jobTitle: u.jobTitle || "",
+                    orgName: u.teamId || "",
+                  };
+                  localStorage.setItem("teamyak_custom_profile", JSON.stringify(p));
+                  localStorage.setItem("teamyak_profile_onboarding_done", "true");
+                }
+              }
             }
           } catch {
             // 백엔드 동기화 실패 시에도 클라이언트 복귀 계속 진행

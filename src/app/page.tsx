@@ -162,26 +162,68 @@ export default function TeamyakUnifiedApp() {
         }
 
         if (data.authenticated && data.user) {
+          const u = data.user;
+          const serverHasCustom =
+            u.displayName &&
+            !u.displayName.startsWith("카카오 회원") &&
+            u.displayName !== "팀약 회원" &&
+            u.teamId;
+
+          const effectiveName = parsedProfile?.displayName || (serverHasCustom ? u.displayName : "");
+          const effectiveOrg = parsedProfile?.orgName || (serverHasCustom ? u.teamId : "");
+          const effectiveTitle = parsedProfile?.jobTitle || (serverHasCustom ? u.jobTitle : "");
+
+          if (serverHasCustom && !parsedProfile) {
+            const restored = {
+              displayName: u.displayName,
+              jobTitle: u.jobTitle || "",
+              orgName: u.teamId || "",
+            };
+            try {
+              localStorage.setItem("teamyak_custom_profile", JSON.stringify(restored));
+              localStorage.setItem("teamyak_profile_onboarding_done", "true");
+            } catch {}
+          } else if (parsedProfile?.displayName && (!u.displayName || u.displayName.startsWith("카카오 회원"))) {
+            // 클라이언트에 저장된 내 정보를 서버 DB로 자동 동기화
+            fetch("/api/auth", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${savedToken}`,
+              },
+              body: JSON.stringify({
+                action: "UPDATE_PROFILE",
+                displayName: parsedProfile.displayName,
+                jobTitle: parsedProfile.jobTitle || `${parsedProfile.orgName || ""} 담당자`,
+                orgName: parsedProfile.orgName || "",
+              }),
+            }).catch(() => {});
+          }
+
           const kakaoAcc: AccountInfo = {
-            id: data.user.id,
+            id: u.id,
             accountType: "REAL_KAKAO_OAUTH",
-            displayName: parsedProfile?.displayName || data.user.displayName || "카카오 회원",
-            jobTitle: parsedProfile?.jobTitle || data.user.jobTitle || "팀약 회원",
-            teamId: parsedProfile?.orgName || data.user.teamId || null,
+            displayName: effectiveName || u.displayName || "카카오 회원",
+            jobTitle: effectiveTitle || u.jobTitle || "팀약 회원",
+            teamId: effectiveOrg || u.teamId || null,
             sessionToken: savedToken || "",
             deviceLabel: "카카오 인증 기기",
             hasKeyBackup: true,
             recoveryEntropyBits: 140,
           };
           accList = [kakaoAcc];
-          setInitialUserId(data.user.id);
+          setInitialUserId(u.id);
         } else if (savedToken) {
+          const effectiveName = parsedProfile?.displayName || "";
+          const effectiveOrg = parsedProfile?.orgName || "";
+          const effectiveTitle = parsedProfile?.jobTitle || "";
+
           const fallbackKakaoAcc: AccountInfo = {
             id: "u_kakao_client",
             accountType: "REAL_KAKAO_OAUTH",
-            displayName: parsedProfile?.displayName || "카카오 회원",
-            jobTitle: parsedProfile?.jobTitle || "팀약 회원",
-            teamId: parsedProfile?.orgName || null,
+            displayName: effectiveName || "카카오 회원",
+            jobTitle: effectiveTitle || "팀약 회원",
+            teamId: effectiveOrg || null,
             sessionToken: savedToken,
             deviceLabel: "카카오 인증 기기",
             hasKeyBackup: true,
@@ -368,8 +410,7 @@ export default function TeamyakUnifiedApp() {
                 onClick={() => {
                   localStorage.removeItem("teamyak_session_token");
                   localStorage.removeItem("teamyak_supabase_access_token");
-                  localStorage.removeItem("teamyak_custom_profile");
-                  localStorage.removeItem("teamyak_profile_onboarding_done");
+                  // 사용자 프로필 정보는 영구 보존하여 재로그인 시 즉시 내 정보가 뜨도록 유지
                   window.location.href = "/";
                 }}
                 className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
@@ -559,19 +600,55 @@ function MobileDeviceInstance({
         localStorage.getItem("teamyak_session_token") ||
         localStorage.getItem("teamyak_supabase_access_token");
       const savedProfile = localStorage.getItem("teamyak_custom_profile");
-      if (token && !savedProfile) {
+      const onboardingDone = localStorage.getItem("teamyak_profile_onboarding_done");
+      if (token && !savedProfile && onboardingDone !== "true") {
         return true;
       }
     }
     return false;
   });
-  const [profileNameInput, setProfileNameInput] = useState<string>("");
-  const [profileOrgInput, setProfileOrgInput] = useState<string>("");
-  const [profileTitleInput, setProfileTitleInput] = useState<string>("");
+  const [profileNameInput, setProfileNameInput] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("teamyak_custom_profile");
+      if (saved) {
+        try {
+          return JSON.parse(saved).displayName || "";
+        } catch {}
+      }
+    }
+    return "";
+  });
+  const [profileOrgInput, setProfileOrgInput] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("teamyak_custom_profile");
+      if (saved) {
+        try {
+          return JSON.parse(saved).orgName || "";
+        } catch {}
+      }
+    }
+    return "";
+  });
+  const [profileTitleInput, setProfileTitleInput] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("teamyak_custom_profile");
+      if (saved) {
+        try {
+          const p = JSON.parse(saved);
+          return p.jobTitle && p.orgName
+            ? p.jobTitle.replace(p.orgName, "").trim()
+            : p.jobTitle || "";
+        } catch {}
+      }
+    }
+    return "";
+  });
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
   const [hasProfile, setHasProfile] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
-      return Boolean(localStorage.getItem("teamyak_custom_profile"));
+      const saved = localStorage.getItem("teamyak_custom_profile");
+      const done = localStorage.getItem("teamyak_profile_onboarding_done");
+      return Boolean(saved || done === "true");
     }
     return false;
   });
@@ -584,7 +661,61 @@ function MobileDeviceInstance({
         "";
       setSessionToken(token);
       setIsLoggedIn(Boolean(token));
-      setHasProfile(Boolean(localStorage.getItem("teamyak_custom_profile")));
+      const saved = localStorage.getItem("teamyak_custom_profile");
+      const done = localStorage.getItem("teamyak_profile_onboarding_done");
+      if (saved || done === "true") {
+        setHasProfile(true);
+        if (saved) {
+          try {
+            const p = JSON.parse(saved);
+            if (p.displayName) setProfileNameInput(p.displayName);
+            if (p.orgName) setProfileOrgInput(p.orgName);
+            if (p.jobTitle) {
+              setProfileTitleInput(
+                p.jobTitle && p.orgName
+                  ? p.jobTitle.replace(p.orgName, "").trim()
+                  : p.jobTitle
+              );
+            }
+          } catch {}
+        }
+      }
+
+      // 로그인된 경우 서버에서 내 정보 조회하여 자동 복원 및 동기화
+      if (token) {
+        fetch("/api/auth", { headers: { Authorization: `Bearer ${token}` } })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.authenticated && data.user) {
+              const u = data.user;
+              const serverHasCustom =
+                u.displayName &&
+                !u.displayName.startsWith("카카오 회원") &&
+                u.displayName !== "팀약 회원" &&
+                u.teamId;
+
+              if (serverHasCustom) {
+                const restored = {
+                  displayName: u.displayName,
+                  jobTitle: u.jobTitle || "",
+                  orgName: u.teamId || "",
+                };
+                localStorage.setItem("teamyak_custom_profile", JSON.stringify(restored));
+                localStorage.setItem("teamyak_profile_onboarding_done", "true");
+                setHasProfile(true);
+                setShowProfileModal(false);
+                setProfileNameInput(u.displayName);
+                setProfileOrgInput(u.teamId);
+                setProfileTitleInput(
+                  u.jobTitle && u.teamId
+                    ? u.jobTitle.replace(u.teamId, "").trim()
+                    : u.jobTitle || ""
+                );
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [syncPulse]);
 
@@ -1896,7 +2027,7 @@ function MobileDeviceInstance({
     <div className="w-full max-w-md mx-auto rounded-3xl bg-white text-slate-900 shadow-xl border border-slate-200 flex flex-col transition-all overflow-hidden mb-8">
       {/* 모바일 상단 바 */}
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
           <span className="text-xs font-black text-white">
             {(() => {
@@ -1926,6 +2057,13 @@ function MobileDeviceInstance({
               return cur?.jobTitle ? `(${cur.jobTitle})` : "";
             })()}
           </span>
+          <button
+            type="button"
+            onClick={() => setShowProfileModal(true)}
+            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[9px] font-bold border border-slate-700 transition cursor-pointer"
+          >
+            ✏️ 수정
+          </button>
         </div>
 
         <button
@@ -1933,8 +2071,7 @@ function MobileDeviceInstance({
             if (typeof window !== "undefined") {
               localStorage.removeItem("teamyak_session_token");
               localStorage.removeItem("teamyak_supabase_access_token");
-              localStorage.removeItem("teamyak_custom_profile");
-              localStorage.removeItem("teamyak_profile_onboarding_done");
+              // 사용자 프로필 정보는 영구 보존하여 재로그인 시 즉시 내 정보가 뜨도록 유지
               window.location.href = "/";
             }
           }}
@@ -3557,11 +3694,11 @@ function MobileDeviceInstance({
             </div>
 
             <div className="pt-3 flex gap-2">
-              {typeof window !== "undefined" && localStorage.getItem("teamyak_custom_profile") ? (
+              {typeof window !== "undefined" && (localStorage.getItem("teamyak_custom_profile") || hasProfile) ? (
                 <button
                   type="button"
                   onClick={() => setShowProfileModal(false)}
-                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
                 >
                   취소
                 </button>
@@ -3570,11 +3707,15 @@ function MobileDeviceInstance({
                 type="button"
                 onClick={handleSaveProfile}
                 disabled={isSavingProfile}
-                className="w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-sm shadow-md transition disabled:opacity-50 active:scale-95 cursor-pointer"
+                className={`${
+                  typeof window !== "undefined" && (localStorage.getItem("teamyak_custom_profile") || hasProfile)
+                    ? "flex-1"
+                    : "w-full"
+                } py-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-black text-sm shadow-md transition disabled:opacity-50 active:scale-95 cursor-pointer`}
               >
                 {isSavingProfile
                   ? "저장 중..."
-                  : typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile")
+                  : typeof window !== "undefined" && !localStorage.getItem("teamyak_custom_profile") && !hasProfile
                   ? "입력 완료하고 팀약 시작하기 →"
                   : "저장 완료"}
               </button>

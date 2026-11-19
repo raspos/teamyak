@@ -365,7 +365,14 @@ export async function POST(req: NextRequest) {
         };
         db.users.push(user);
       } else {
-        user.displayName = nickname;
+        // 이미 사용자가 직접 설정한 이름/직급/소속이 있다면 그대로 보존
+        if (
+          !user.displayName ||
+          user.displayName.startsWith("카카오 회원") ||
+          user.displayName === "팀약 회원"
+        ) {
+          user.displayName = nickname;
+        }
       }
 
       const sessId = `sess_${user.id}_${Date.now()}`;
